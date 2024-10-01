@@ -9,11 +9,11 @@ scikit-multilearn @ git+https://github.com/scikit-multilearn/scikit-multilearn@m
 timm==1.0.7
 tensorboard==2.17.0
 torchtyping==0.1.4
---extra-index-url https://download.pytorch.org/whl/cu118
+--extra-index-url https://download.pytorch.org/whl/cu121
 torch==2.3.0
---extra-index-url https://download.pytorch.org/whl/cu118
+--extra-index-url https://download.pytorch.org/whl/cu121
 torchvision
---extra-index-url https://download.pytorch.org/whl/cu118
+--extra-index-url https://download.pytorch.org/whl/cu121
 torchaudio
--f https://data.pyg.org/whl/torch-2.3.0+cu118.html
+-f https://data.pyg.org/whl/torch-2.3.0+cu121.html
 torch-scatter

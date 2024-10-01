@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04 AS builder
+FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu20.04 AS builder
 
 # install ninja for faster compile
 ARG DEBIAN_FRONTEND=noninteractive
@@ -26,7 +26,7 @@ RUN pip install -e .
 
 
 # reimport image
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu20.04 AS runner
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu20.04 AS runner
 
 # install libraries required for using the OpenCV python packages
 RUN apt-get update  \
