@@ -162,3 +162,8 @@ cython_debug/
 #.idea/
 
 checkpoints/
+.vscode/
+scratch*
+*.pkl
+input/
+output/

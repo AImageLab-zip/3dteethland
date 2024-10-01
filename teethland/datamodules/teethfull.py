@@ -125,29 +125,23 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
             md = mesial_and_distal.batch(b).C
 
             if label % 10 in [1, 2]:  # incisor
-                if label // 10 in [1, 4, 5, 8]:
+                if label // 10 in [2, 4, 6, 8]:
                     is_mesial = md[:, 0] > labels.C[b, 0]
-                elif label // 10 in [2, 3, 6, 7]:
+                elif label // 10 in [1, 3, 5, 7]:
                     is_mesial = md[:, 0] < labels.C[b, 0]
             elif label % 10 == 3:  # canine
-                max_idxs = torch.argsort(mesial_and_distal.batch(b).F[:, 0])[-2:]
-                if label // 10 in [1, 4, 5, 8]:
+                if label // 10 in [2, 4, 6, 8]:
                     scores = np.stack((
-                        (md[max_idxs] - labels.C[b])[:, :2].cpu().numpy() @ [-1, 1],  # topleft = distal
-                        (md[max_idxs] - labels.C[b])[:, :2].cpu().numpy() @ [1, -1],  # bottomright = mesial
+                        (md - labels.C[b])[:, :2].cpu().numpy() @ [-1, 1],  # topleft = distal
+                        (md - labels.C[b])[:, :2].cpu().numpy() @ [1, -1],  # bottomright = mesial
                     ))
-                elif label // 10 in [2, 3, 6, 7]:
+                elif label // 10 in [1, 3, 5, 7]:
                     scores = np.stack((
-                        (md[max_idxs] - labels.C[b])[:, :2].cpu().numpy() @ [1, 1],  # topright = distal
-                        (md[max_idxs] - labels.C[b])[:, :2].cpu().numpy() @ [-1, -1],  # bottomleft = mesial
+                        (md - labels.C[b])[:, :2].cpu().numpy() @ [1, 1],  # topright = distal
+                        (md - labels.C[b])[:, :2].cpu().numpy() @ [-1, -1],  # bottomleft = mesial
                     ))
-
-                dir_idxs, md_idxs = linear_sum_assignment(scores, maximize=True)
-                dir_idxs = torch.from_numpy(dir_idxs).to(labels.F)
-                md_idxs = torch.from_numpy(md_idxs).to(labels.F)
                 
-                is_mesial = torch.full((md.shape[0],), -1).to(labels.F)
-                is_mesial[max_idxs] = dir_idxs[torch.argsort(md_idxs)]
+                is_mesial = torch.from_numpy(scores.argmax(0)).to(mesial_mask)
             elif label % 10 in [4, 5, 6, 7, 8]:  # premolar+molar
                 is_mesial = md[:, 1] < labels.C[b, 1]
 

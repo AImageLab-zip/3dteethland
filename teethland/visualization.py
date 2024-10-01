@@ -217,7 +217,7 @@ def check_landmarks():
         # if stem != 'E0CUCLHY_lower':
         #     continue
 
-        mesh_file = next(seg_root.glob(f'**/{stem}*.obj'))
+        mesh_file = next(seg_root.glob(f'**/{stem}*.ply'))
 
         ms = pymeshlab.MeshSet()
         ms.load_new_mesh(str(mesh_file))
@@ -249,7 +249,7 @@ if __name__ == '__main__':
     import open3d
     import pymeshlab
 
-    check_predictions()
+    # check_predictions()
     check_landmarks()
 
     
