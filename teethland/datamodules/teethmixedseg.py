@@ -20,6 +20,13 @@ class TeethMixedSegDataModule(TeethInstSegDataModule):
     def num_classes(self) -> int:
         return 12 if self.filter or not self.distinguish_upper_lower else 24
     
+    def _files(
+        self,
+        stage: str,
+        exclude: List[str]=[],
+    ) -> Union[List[Path], List[Tuple[Path, Path]]]:
+        return super()._files(stage, exclude)
+    
     def teeth_labels_to_classes(
         self,
         labels: Union[

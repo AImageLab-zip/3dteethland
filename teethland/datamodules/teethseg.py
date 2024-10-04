@@ -99,7 +99,7 @@ class TeethSegDataModule(pl.LightningDataModule):
             with open(self.root / case_files[1], 'rb') as f:
                 annotation = json.load(f)
 
-            subject = case_files[0].stem.split('_')[0]
+            subject = re.split('_|-', case_files[0].stem)[0]
             labels = np.unique(annotation['labels'])
 
             subject_idx = subject_idxs.setdefault(subject, len(subject_idxs))

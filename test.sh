@@ -16,8 +16,8 @@ docker run --rm \
         --network="none" \
         --cap-drop="ALL" \
         --security-opt="no-new-privileges" \
-        --shm-size="128m" \
-        --pids-limit="256" \
+        --shm-size="1024m" \
+        --pids-limit="1024" \
         --gpus="all" \
         --read-only \
         -v $SCRIPTPATH/input/:/input/:ro \

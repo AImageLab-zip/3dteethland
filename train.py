@@ -58,7 +58,7 @@ def main(stage: str, devices: int, checkpoint: str):
                 pop_keys.append(k)
         
         instseg_state = {k: v for k, v in instseg_state['state_dict'].items() if k not in pop_keys}
-        model.load_state_dict(instseg_state, strict=False)
+        print(model.load_state_dict(instseg_state, strict=False))
     elif stage == 'landmarks':
         # model = LandmarkNet.load_from_checkpoint(
         model = OffsetLandmarkNet.load_from_checkpoint(
@@ -92,7 +92,7 @@ def main(stage: str, devices: int, checkpoint: str):
     )
     metric_checkpoint_callback = ModelCheckpoint(
         save_top_k=3,
-        monitor='dice/val' if stage == 'landmarks' else 'fdi_f1/val',
+        monitor='dice/val' if stage == 'landmarks' else 'fdi_f1/val_epoch',
         mode='min' if stage == 'landmarks' else 'max',
         filename='weights-{epoch:02d}',
     )

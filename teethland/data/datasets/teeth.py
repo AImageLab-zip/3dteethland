@@ -78,7 +78,11 @@ class TeethSegDataset(MeshDataset):
             annotation = json.load(f)
 
         instances = np.array(annotation['instances'])
-        _, instances = np.unique(instances, return_inverse=True)
+        _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
+
+        labels = np.array(annotation['labels'])
+        instances[(counts < 20)[instances]] = 0
+        labels[(counts < 20)[instances]] = 0
 
         return {
             **(
@@ -86,7 +90,7 @@ class TeethSegDataset(MeshDataset):
                 if 'confidences' not in annotation else
                 {'confidences': np.array(annotation['confidences'])}
             ),
-            'labels': np.array(annotation['labels']),
+            'labels': labels,
             'instances': instances,
         }
 

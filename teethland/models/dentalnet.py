@@ -60,7 +60,8 @@ class DentalNet(pl.LightningModule):
 
         self.dice = BinaryF1Score()
         self.iou = BinaryJaccardIndex()
-        self.fdi_f1 = MulticlassF1Score(num_classes=model_args['num_classes'])
+        self.fdi_f1_batch = MulticlassF1Score(num_classes=model_args['num_classes'])
+        self.fdi_f1_epoch = MulticlassF1Score(num_classes=model_args['num_classes'])
         self.tooth_f1 = ToothF1Score()
 
         self.lr = lr
@@ -97,15 +98,12 @@ class DentalNet(pl.LightningModule):
 
         if torch.isnan(identify_loss):
             print('NaN loss:', self.trainer.datamodule.scan_file)
-        
-        self.fdi_f1(classes.F, instances.F)
 
         loss = instance_loss + identify_loss
         self.log_dict({
             'loss/train_instance': instance_loss,
             'loss/train_identify': identify_loss,
             'loss/train': loss,
-            'fdi_f1/train': self.fdi_f1,
         }, batch_size=x.batch_size)
 
         return loss
@@ -146,8 +144,10 @@ class DentalNet(pl.LightningModule):
                 **metric_dict,
             })
         
-        self.fdi_f1(classes.F, instances.F)
-        log_dict.update({'fdi_f1/val': self.fdi_f1})
+        self.fdi_f1_batch(classes.F, instances.F)
+        self.fdi_f1_epoch(classes.F, instances.F)
+        log_dict.update({'fdi_f1/val_batch': self.fdi_f1_batch.compute()})
+        log_dict.update({'fdi_f1/val_epoch': self.fdi_f1_epoch})
 
         self.log_dict(log_dict, batch_size=x.batch_size, sync_dist=True)
 

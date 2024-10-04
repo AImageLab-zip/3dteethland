@@ -610,9 +610,18 @@ class InstanceCentroids:
         labels, instances = data_dict['labels'], data_dict['instances']
 
         if labels.shape[0] < points.shape[0]:
+            print('different shape!')
             diff = points.shape[0] - labels.shape[0]
             labels = np.concatenate((labels, [0]*diff))
             instances = np.concatenate((instances, [0]*diff))
+            
+            data_dict['labels'] = labels
+            data_dict['instances'] = instances
+        elif labels.shape[0] > points.shape[0]:
+            print('different shape!')
+            diff = labels.shape[0] - points.shape[0]
+            labels = labels[:-diff]
+            instances = instances[:-diff]
             
             data_dict['labels'] = labels
             data_dict['instances'] = instances

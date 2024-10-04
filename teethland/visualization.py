@@ -152,20 +152,28 @@ def check_predictions():
     root = Path('/mnt/diag/IOS/Brazil/Modelberging')
     root = Path('/home/mkaailab/Documents/CBCT/fusion/stls')
     root = Path('/home/mkaailab/Documents/IOS/Katja VOs/transfer_2892173_files_6b1a93dd')
+    root = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
     # root = Path('input').resolve()
     # root = Path('/home/mkaailab/Documents/IOS/Maud Wijbrands/root')
     mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('*.ply')))
-    ann_files = sorted(root.glob('**/*er.json'))[-1200:]
+    ann_files = sorted(root.glob('**/*er.json'))
     clean = False
 
     start_idx = 0
     # files = mesh_files[start_idx:]
     for i, ann_file in enumerate(ann_files):
-        mesh_file = root / ann_file.with_suffix('.obj')
+        mesh_file = sorted(root.glob(f'{ann_file.name.split("_")[0]}/{ann_file.stem}*'))[-1]
+        mesh_file = root.parent / 'cases' / ann_file.stem.split('_')[0] / f'{ann_file.stem}.ply'
         if not ann_file.exists():
             continue
         # ann_file = mesh_file.with_suffix('.json')
         print(i, ':', mesh_file.stem)
+
+        if not mesh_file.stem.startswith('G002'):
+            continue
+
+        # if not mesh_file.stem == '4SA064Y7_upper':
+        #     continue
 
         # draw_instances(mesh_file, ann_file)
         # draw_proposal(mesh_file, ann_file)
@@ -208,6 +216,7 @@ def check_predictions():
 def check_landmarks():
     seg_root = Path('/home/mkaailab/Documents/IOS/3dteethland/data/lower_upper')
     seg_root = Path('input')
+    # seg_root = Path('/home/mkaailab/Documents/IOS/Brazil/test')
     # seg_root = Path('/home/mkaailab/Documents/CBCT/fusion/stls')
     landmarks_root = Path('/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train')
     landmarks_root = seg_root
@@ -232,7 +241,7 @@ def check_landmarks():
         landmark_classes = np.array([landmark['class'] for landmark in landmarks])
         _, landmark_classes = np.unique(landmark_classes, return_inverse=True)
 
-        mask = landmark_scores >= 0.01
+        mask = landmark_scores >= 0.5
         landmarks = np.column_stack((landmark_coords[mask], landmark_classes[mask]))
 
         draw_landmarks(vertices, landmarks, triangles, point_size=0.5)
@@ -249,7 +258,7 @@ if __name__ == '__main__':
     import open3d
     import pymeshlab
 
-    # check_predictions()
-    check_landmarks()
+    check_predictions()
+    # check_landmarks()
 
     

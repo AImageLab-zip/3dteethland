@@ -7,7 +7,7 @@ def learned_region_cluster(
     sigmas,
     seeds,
     min_seed_score: float=0.9,
-    min_cluster_size: int=128,
+    min_cluster_size: int=20,
     min_unclustered: float=0.35,
 ):
     out = [torch.full((n,1), -1).to(seeds.F).long() for n in seeds.batch_counts]

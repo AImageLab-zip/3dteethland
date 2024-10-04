@@ -2,7 +2,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import open3d
-from scipy.optimize import linear_sum_assignment
 import torch
 from torchtyping import TensorType
 
@@ -116,6 +115,14 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
             landmarks.C, torch.ones_like(landmarks.C[:, 0]),
         ))
         landmarks_coords = (landmarks_hom @ torch.linalg.inv(affine.T))[:, :3]
+
+        # project landmarks to scan surface
+        mesh = open3d.io.read_triangle_mesh(str(self.root / self.scan_file))
+        mesh = open3d.t.geometry.TriangleMesh.from_legacy(mesh)
+        scene = open3d.t.geometry.RaycastingScene()
+        _ = scene.add_triangles(mesh)  # we do not need the geometry ID for mesh
+        closest_points = scene.compute_closest_points(landmarks_coords.cpu().numpy())
+        landmarks_coords = torch.from_numpy(closest_points['points'].numpy()).to(landmarks_coords)
 
         # separate mesial and distal landmarks
         mesial_and_distal = landmarks[landmarks.F[:, -1] == 0]

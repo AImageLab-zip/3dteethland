@@ -143,7 +143,7 @@ class IdentificationLoss(nn.Module):
         classes: PointTensor,
         targets: PointTensor,
     ):
-        ce_loss = F.cross_entropy(classes.F, targets.F, reduction='none')
+        ce_loss = F.cross_entropy(classes.F, targets.F, reduction='none', label_smoothing=0.01)
 
         pt = torch.exp(-ce_loss)
         focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
