@@ -2,12 +2,14 @@ import json
 import os
 from pathlib import Path
 import re
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import pytorch_lightning as pl
 from skmultilearn.model_selection import IterativeStratification
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
+
+from teethland.data.samplers import InstanceBalancedSampler
 
 
 class TeethSegDataModule(pl.LightningDataModule):
@@ -18,6 +20,7 @@ class TeethSegDataModule(pl.LightningDataModule):
         root: Union[str, Path],
         regex_filter: str,
         extensions: str,
+        fold: int,
         clean: bool,
         val_size: float,
         include_val_as_train: bool,
@@ -33,6 +36,7 @@ class TeethSegDataModule(pl.LightningDataModule):
         self.root = Path(root)
         self.filter = f'/(?!{os.sep}\.)[^{os.sep}\.]*({regex_filter})'
         self.extensions = extensions
+        self.fold = fold
         self.clean = clean
         self.val_size = val_size
         self.include_val_as_train = include_val_as_train
@@ -100,6 +104,10 @@ class TeethSegDataModule(pl.LightningDataModule):
                 annotation = json.load(f)
 
             subject = re.split('_|-', case_files[0].stem)[0]
+            
+            labels = np.array(annotation['labels'])
+            _, instances, counts = np.unique(labels, return_inverse=True, return_counts=True)
+            labels[(counts < 20)[instances]] = 0
             labels = np.unique(annotation['labels'])
 
             subject_idx = subject_idxs.setdefault(subject, len(subject_idxs))
@@ -113,14 +121,13 @@ class TeethSegDataModule(pl.LightningDataModule):
 
         # split subjects with stratification on multi-labels
         stratifier = IterativeStratification(
-            n_splits=2,
+            n_splits=5,
             order=2,
-            sample_distribution_per_fold=[self.val_size, 1 - self.val_size],
         )
-        train_idxs, val_idxs = next(stratifier.split(
+        train_idxs, val_idxs = list(stratifier.split(
             X=subject_files,
             y=subject_labels,
-        ))
+        ))[self.fold]
         train_files = [f for i in train_idxs for f in subject_files[i]]
         val_files = [f for i in val_idxs for f in subject_files[i]]
 
@@ -133,11 +140,13 @@ class TeethSegDataModule(pl.LightningDataModule):
         self,
         dataset: Dataset,
         shuffle: bool=False,
+        sampler: Optional[Sampler]=None,
     ) -> DataLoader:
         return DataLoader(
             dataset=dataset,
             batch_size=self.batch_size,
             shuffle=shuffle,
+            sampler=sampler,
             num_workers=self.num_workers,
             collate_fn=self.collate_fn,
             pin_memory=self.pin_memory,
@@ -145,7 +154,8 @@ class TeethSegDataModule(pl.LightningDataModule):
         )
 
     def train_dataloader(self) -> DataLoader:
-        return self._dataloader(self.train_dataset, shuffle=True)
+        sampler = InstanceBalancedSampler(self.train_dataset)
+        return self._dataloader(self.train_dataset, sampler=sampler)
 
     def val_dataloader(self) -> DataLoader:
         return self._dataloader(self.val_dataset)

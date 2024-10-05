@@ -1,5 +1,5 @@
 work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: mixedseg_validate
+version: mixedseg_fold2
 seed: 0
 
 model:
@@ -19,7 +19,7 @@ model:
     crpe_bins: 80
     transformer_lr_ratio: 0.1
     checkpoint_path: 'checkpoints/instseg_full.ckpt'
-    # checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/mixedseg_checked/checkpoints/weights-epoch=132-v1.ckpt'
+    # checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/mixedseg_validate/checkpoints/weights-epoch=164.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 500
@@ -40,7 +40,7 @@ model:
     stratified_downsample_ratio: 0.26
     crpe_bins: 80
     transformer_lr_ratio: 0.1
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/mixedseg/checkpoints/weights-epoch=199.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/mixedseg_validate/checkpoints/weights-epoch=169.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 200
@@ -77,7 +77,7 @@ model:
 accumulate_grad_batches: 1  # 1 better segmentation, worse classification
 gradient_clip_norm: 35  # 10 is worse
 
-out_dir: ''
+out_dir: 'output'
 datamodule:
   root: '/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper'
   root: '/home/mkaailab/Documents/IOS/3dteethland/code/input'
@@ -85,12 +85,13 @@ datamodule:
   landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
   regex_filter: ''
   extensions: ['ply', 'stl', 'obj']
+  fold: 2
   clean: True  # TODO: Set to true for Grand Challenge inference
   val_size: 0.2
   include_val_as_train: false
   batch: null  # [0, 100]
   batch_size: 2
-  num_workers: 1
+  num_workers: 8
   pin_memory: True
   persistent_workers: False
   # uniform_density_voxel_size: 0.025  # instseg
