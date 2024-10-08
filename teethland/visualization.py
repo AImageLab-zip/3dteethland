@@ -108,7 +108,7 @@ def draw_point_clouds(
                 classes[classes >= 0] %= palette.shape[0] - 1
                 colors = palette[classes] / 255
 
-            pcd.colors = open3d.utility.Vector3dVector(colors.cpu())
+            pcd.colors = open3d.utility.Vector3dVector(colors.cpu().detach())
             geometries.append(pcd)
 
     if output_type == 'tensorboard':
@@ -120,6 +120,8 @@ def draw_point_clouds(
 def draw_landmarks(
     vertices: np.ndarray,
     landmarks: np.ndarray,
+    labels:  Optional[np.ndarray]=None,
+    normals: Optional[np.ndarray]=None,
     triangles: Optional[np.ndarray]=None,
     point_size: float=0.025
 ):
@@ -133,6 +135,9 @@ def draw_landmarks(
         geom = open3d.geometry.PointCloud(
             open3d.utility.Vector3dVector(vertices),
         )
+        if normals is not None:
+            geom.normals = open3d.utility.Vector3dVector(normals)
+        geom.colors = open3d.utility.Vector3dVector(np.full((vertices.shape[0], 3), 100 / 255))
 
     balls = []
     for landmark in landmarks:
@@ -169,8 +174,8 @@ def check_predictions():
         # ann_file = mesh_file.with_suffix('.json')
         print(i, ':', mesh_file.stem)
 
-        if not mesh_file.stem.startswith('G002'):
-            continue
+        # if not mesh_file.stem.startswith('G002'):
+        #     continue
 
         # if not mesh_file.stem == '4SA064Y7_upper':
         #     continue
@@ -181,6 +186,7 @@ def check_predictions():
 
         ms = pymeshlab.MeshSet()
         ms.load_new_mesh(str(mesh_file))
+        ms.meshing_remove_duplicate_vertices()
         if clean:
             ms.meshing_repair_non_manifold_edges()
             ms.meshing_close_holes(maxholesize=130)  # ~20mm boundary
@@ -196,6 +202,14 @@ def check_predictions():
         labels = np.array(ann['labels'])
         classes = np.full_like(labels, fill_value=-1)
         instances = np.array(ann['instances'])
+
+        if labels.shape[0] > vertices.shape[0]:
+            print('different shape!')
+            diff = labels.shape[0] - vertices.shape[0]
+            labels = labels[:-diff]
+            instances = instances[:-diff]
+        else:
+            continue
 
         _, inverse = np.unique(labels, return_inverse=True)
         print(_)
@@ -214,8 +228,8 @@ def check_predictions():
 
 
 def check_landmarks():
-    seg_root = Path('/home/mkaailab/Documents/IOS/3dteethland/data/lower_upper')
-    seg_root = Path('input')
+    seg_root = Path('/home/mkaailab/Documents/IOS/3dteethland/data/unseen')
+    # seg_root = Path('input')
     # seg_root = Path('/home/mkaailab/Documents/IOS/Brazil/test')
     # seg_root = Path('/home/mkaailab/Documents/CBCT/fusion/stls')
     landmarks_root = Path('/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train')
@@ -223,16 +237,33 @@ def check_landmarks():
 
     for landmarks_file in sorted(landmarks_root.glob('**/*__kpt.json')):
         stem = landmarks_file.stem.split('__')[0]
-        # if stem != 'E0CUCLHY_lower':
-        #     continue
-
-        mesh_file = next(seg_root.glob(f'**/{stem}*.ply'))
+        ann_file = next(seg_root.glob(f'**/{stem}.json'))
+        mesh_file = next(seg_root.glob(f'**/{stem}.obj'))
 
         ms = pymeshlab.MeshSet()
         ms.load_new_mesh(str(mesh_file))
 
         vertices = ms.current_mesh().vertex_matrix()
         triangles = ms.current_mesh().face_matrix()
+
+        with open(ann_file, 'rb') as f:
+            ann = json.load(f)
+
+        labels = np.array(ann['labels'])
+        _, inverse = np.unique(labels, return_inverse=True)
+        print(stem)
+        print(_)
+
+        labels = np.clip(labels % 10, a_min=0, a_max=7)
+
+        mesh = open3d.geometry.TriangleMesh(
+            vertices=open3d.utility.Vector3dVector(vertices),
+            triangles=open3d.utility.Vector3iVector(triangles),
+        )
+        mesh.compute_vertex_normals()
+        mesh.vertex_colors = open3d.utility.Vector3dVector(palette[inverse - 1] / 255)
+        mesh.vertex_colors = open3d.utility.Vector3dVector(np.full((inverse.shape[0], 3), 100 / 255))
+
 
         with open(landmarks_file, 'r') as f:
             landmarks = json.load(f)['objects']
@@ -241,10 +272,18 @@ def check_landmarks():
         landmark_classes = np.array([landmark['class'] for landmark in landmarks])
         _, landmark_classes = np.unique(landmark_classes, return_inverse=True)
 
-        mask = landmark_scores >= 0.5
+        mask = landmark_scores >= 0.7
         landmarks = np.column_stack((landmark_coords[mask], landmark_classes[mask]))
+        
+        balls = []
+        for landmark in landmarks:
+            ball = open3d.geometry.TriangleMesh.create_sphere(radius=0.03 * 17.3281)
+            ball.translate(landmark[:3])
+            ball.paint_uniform_color(palette[int(landmark[-1])].numpy() / 255)
+            ball.compute_vertex_normals()
+            balls.append(ball)
 
-        draw_landmarks(vertices, landmarks, triangles, point_size=0.5)
+        open3d.visualization.draw_geometries([mesh])
 
 
 

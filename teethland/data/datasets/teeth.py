@@ -52,10 +52,6 @@ class TeethSegDataset(MeshDataset):
     ) -> Dict[str, Union[bool, int, NDArray[Any]]]:
         ms = pymeshlab.MeshSet()
         ms.load_new_mesh(str(self.root / file))
-        ms.meshing_remove_duplicate_vertices()
-        # if self.clean:
-        #     ms.meshing_repair_non_manifold_edges()
-        #     ms.meshing_close_holes(maxholesize=130)  # ~20mm boundary
 
         mesh = ms.current_mesh()
         mesh.compact()
@@ -111,21 +107,11 @@ class TeethLandDataset(TeethSegDataset):
         self,
         seg_root: Path,
         landmarks_root: Path,
-        include_cusps: bool,
-        to_left_right: bool,
-        separate_front_posterior: bool,
         **kwargs: Dict[str, Any],
     ) -> None:
         super().__init__(
             root=seg_root,
-            pre_transform=T.Compose(
-                T.MatchLandmarksAndTeeth(),
-                T.StructureLandmarks(
-                    include_cusps=include_cusps,
-                    to_left_right=to_left_right,
-                    separate_front_posterior=separate_front_posterior,
-                ),
-            ),
+            pre_transform=T.MatchLandmarksAndTeeth(),
             **kwargs,
         )
         

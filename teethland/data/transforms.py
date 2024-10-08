@@ -110,8 +110,6 @@ class RandomZAxisRotate:
 
         if 'landmark_coords' in data_dict:
             data_dict['landmark_coords'] = data_dict['landmark_coords'] @ R.T
-        if 'instance_landmarks' in data_dict:
-            data_dict['instance_landmarks'] = data_dict['instance_landmarks'] @ R.T
         if 'instance_centroids' in data_dict:
             data_dict['instance_centroids'] = data_dict['instance_centroids'] @ R.T
         
@@ -147,8 +145,6 @@ class RandomScale(object):
 
         if 'landmark_coords' in data_dict:
             data_dict['landmark_coords'] *= scale
-        if 'instance_landmarks' in data_dict:
-            data_dict['instance_landmarks'] *= scale
         if 'instance_centroids' in data_dict:
             data_dict['instance_centroids'] *= scale
         
@@ -231,15 +227,6 @@ class RandomAxisFlip(object):
                     coords.max() + coords.min() - landmarks
                 )
                 data_dict['landmark_classes'] = self.landmark_flip_idxs[data_dict['landmark_classes']]
-                
-            if 'instance_landmarks' in data_dict:
-                landmarks_mask = np.any(data_dict['instance_landmarks'] != 0, axis=-1)
-                landmarks = data_dict['instance_landmarks'][..., self.axis]
-                data_dict['instance_landmarks'][..., self.axis] = np.where(
-                    landmarks_mask, coords.max() + coords.min() - landmarks, 0.0,
-                )
-                flip_idxs = self.landmark_flip_idxs[:data_dict['instance_landmarks'].shape[1]]
-                data_dict['instance_landmarks'] = data_dict['instance_landmarks'][:, flip_idxs]
 
             if 'instance_centroids' in data_dict:
                 centroids = data_dict['instance_centroids'][:, self.axis]
@@ -610,7 +597,7 @@ class InstanceCentroids:
         labels, instances = data_dict['labels'], data_dict['instances']
 
         if labels.shape[0] < points.shape[0]:
-            print('different shape!')
+            print(data_dict['scan_file'], 'more points than labels!')
             diff = points.shape[0] - labels.shape[0]
             labels = np.concatenate((labels, [0]*diff))
             instances = np.concatenate((instances, [0]*diff))
@@ -618,7 +605,7 @@ class InstanceCentroids:
             data_dict['labels'] = labels
             data_dict['instances'] = instances
         elif labels.shape[0] > points.shape[0]:
-            print('different shape!')
+            print(data_dict['scan_file'], 'more labels than points!')
             diff = labels.shape[0] - points.shape[0]
             labels = labels[:-diff]
             instances = instances[:-diff]
@@ -752,138 +739,6 @@ class MatchLandmarksAndTeeth:
         ])
     
 
-class StructureLandmarks:
-
-    def __init__(
-        self,
-        include_cusps: bool=False,
-        to_left_right: bool=False,
-        separate_front_posterior: bool=True,
-    ):
-        from teethland.data.datasets import TeethLandDataset
-        self.landmark_classes = TeethLandDataset.landmark_classes
-        self.include_cusps = include_cusps
-        self.to_left_right = to_left_right
-        self.separate_front_posterior = separate_front_posterior
-
-        assert not to_left_right or not separate_front_posterior
-
-    def __call__(
-        self,
-        points: NDArray[Any],
-        **data_dict: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        # no-op if ground-truth data is unavailable
-        if 'labels' not in data_dict:
-            data_dict['points'] = points
-
-            return data_dict
-        
-        centroids = data_dict['instance_centroids']
-        land_coords = data_dict['landmark_coords']
-        land_classes = data_dict['landmark_classes']
-        land_instances = data_dict['landmark_instances']
-        
-        num_landmarks = 5 + 2 * self.separate_front_posterior + 5 * self.include_cusps
-        out = np.zeros((centroids.shape[0], num_landmarks, 3))
-        for i in range(centroids.shape[0]):
-            instance_mask = land_instances == i
-            fdi = data_dict['instance_labels'][i]
-
-            # no landmarks for this instance
-            if not np.any(instance_mask):
-                if i > 0: 
-                    print(data_dict['scan_file'], fdi, 'no landmarks')
-                continue
-            
-            # process the non-cusp landmarks
-            for k, v in self.landmark_classes.items():
-                if k == 'Cusp':
-                    continue
-                
-                num_landmarks = (land_classes[instance_mask] == v).sum()
-                if num_landmarks != 1:
-                    print(data_dict['scan_file'], fdi, k, num_landmarks)
-                    if num_landmarks == 0: continue
-
-                out[i, v] = land_coords[instance_mask & (land_classes == v)][-1]
-
-            # have more consistent mesial/distal landmarks as left-to-right landmarks
-            if self.to_left_right and fdi // 10 in [1, 4]:
-                mesial, distal = [self.landmark_classes[k] for k in ['Mesial', 'Distal']]
-                out[i, [mesial, distal]] = out[i, [distal, mesial]]
-            if self.separate_front_posterior and (fdi % 10) <= 3:
-                mesial, distal = [self.landmark_classes[k] for k in ['Mesial', 'Distal']]
-                if fdi // 10 in [1, 4]:
-                    left, right = distal, mesial
-                else:
-                    left, right = mesial, distal
-                    
-                out[i, [-2, -1]] = out[i, [left, right]]
-                out[i, [left, right]] = 0
-
-            # process the cusp landmarks
-            cusp_class = self.landmark_classes['Cusp']
-            cusps = land_classes[instance_mask] == cusp_class
-            if not self.include_cusps or cusps.sum() == 0:  # incisors, canines
-                continue
-            
-            # remove 6th cusp if it is present
-            cusp_coords = land_coords[instance_mask][cusps] - centroids[i]
-            if cusps.sum() == 6:  # two extra cusps
-                print(data_dict['scan_file'], fdi, '6 cusps')
-                dists = np.linalg.norm(cusp_coords[None] - cusp_coords[:, None], axis=-1)
-                dists = np.where(dists > 0, dists, 1e6)
-                pair = np.unravel_index(dists.argmin(), dists.shape)
-                remove_idx = pair[0] if cusp_coords[pair[0], 2] < cusp_coords[pair[1], 2] else pair[1]
-                cusps[np.nonzero(cusps)[0][remove_idx]] = False
-                cusp_coords = np.concatenate((cusp_coords[:remove_idx], cusp_coords[remove_idx + 1:]))
-
-            if (fdi % 10) in [2, 3, 4, 5] and cusps.sum() in [1, 2]:  # premolars
-                scores = np.stack((
-                    cusp_coords[:, :2] @ [1, 0],  # left
-                    cusp_coords[:, :2] @ [-1, 0],  # right
-                ))
-
-                dir_idxs, cusp_idxs = linear_sum_assignment(scores, maximize=True)
-                for dir_idx, cusp_idx in zip(dir_idxs, cusp_idxs):
-                    out[i, cusp_class + dir_idx] = land_coords[instance_mask][cusps][cusp_idx]
-            elif (fdi % 10) in [6, 7, 8] or cusps.sum() >= 3:  # molars
-                assert cusps.sum() in [1, 2, 3, 4, 5], f'Can only have 1 to 5 cusps for a molar, found {cusps.sum()}!'
-
-                scores = np.stack((
-                    cusp_coords[:, :2] @ [1, 1],  # top left
-                    cusp_coords[:, :2] @ [-1, 1],  # top right
-                    cusp_coords[:, :2] @ [1, -1],  # bottom left
-                    cusp_coords[:, :2] @ [-1, -1],  # bottom right
-                    cusp_coords[:, :2] @ [0, 0],  # extra
-                ))
-                
-                dir_idxs, cusp_idxs = linear_sum_assignment(scores, maximize=True)
-                for dir_idx, cusp_idx in zip(dir_idxs, cusp_idxs):
-                    out[i, cusp_class + dir_idx] = land_coords[instance_mask][cusps][cusp_idx]
-            else:
-                raise ValueError('Could not process cusps')
-            
-            if (fdi // 10) in [2, 3]:
-                out[i, [cusp_class, cusp_class + 1]] = out[i, [cusp_class + 1, cusp_class]]
-                out[i, [cusp_class + 2, cusp_class + 3]] = out[i, [cusp_class + 3, cusp_class + 2]]
-            
-        data_dict['points'] = points
-        data_dict['instance_landmarks'] = out
-
-        return data_dict
-    
-    def __repr__(self) -> int:
-        return '\n'.join([
-            self.__class__.__name__ + '(',
-            f'    include_cusps={self.include_cusps},',
-            f'    to_left_right={self.to_left_right},',
-            f'    separate_front_posterior={self.separate_front_posterior},',
-            ')',
-        ])
-    
-
 class GenerateProposals:
 
     def __init__(
@@ -914,13 +769,7 @@ class GenerateProposals:
             replace=False,
         ))
 
-        centroids = data_dict['instance_centroids'][instance_idxs]
-        if 'instance_landmarks' in data_dict:
-            instance_landmarks = data_dict['instance_landmarks'][instance_idxs]
-            landmark_mask = np.any(instance_landmarks != 0, axis=-1, keepdims=True)
-            instance_landmarks = np.where(landmark_mask, instance_landmarks - centroids[:, None], 0.0)
-            data_dict['instance_landmarks'] = instance_landmarks
-        
+        centroids = data_dict['instance_centroids'][instance_idxs]        
         if 'landmark_coords' in data_dict:
             coords = data_dict['landmark_coords']
             classes = data_dict['landmark_classes']

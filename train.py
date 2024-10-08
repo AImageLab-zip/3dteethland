@@ -14,7 +14,7 @@ from teethland.datamodules import (
 from teethland.models import (
     DentalNet,
     LandmarkNet,
-    OffsetLandmarkNet,
+    LandmarkNet,
     PoolingLandmarkNet,
 )
 
@@ -61,7 +61,7 @@ def main(stage: str, devices: int, checkpoint: str):
         print(model.load_state_dict(instseg_state, strict=False))
     elif stage == 'landmarks':
         # model = LandmarkNet.load_from_checkpoint(
-        model = OffsetLandmarkNet.load_from_checkpoint(
+        model = LandmarkNet.load_from_checkpoint(
         # model = OffsetLandmarkNet(
         # model = PoolingLandmarkNet(
         # model = LandmarkNet(

@@ -136,7 +136,7 @@ class TeethLandDataModule(TeethSegDataModule):
         Path,
         TensorType['B', torch.bool],
         PointTensor,
-        Tuple[PointTensor, PointTensor, PointTensor],       
+        Tuple[PointTensor, PointTensor],       
     ]:
         batch_dict = {key: [d[key] for d in batch] for key in batch[0]}
 
@@ -151,17 +151,7 @@ class TeethLandDataModule(TeethSegDataModule):
             batch_counts=point_counts,
         )
 
-        # collate tooth instance centroids and classes
-        instance_counts = torch.stack(batch_dict['instance_count'])
-        if 'instance_landmarks' in batch_dict:
-            instances = PointTensor(
-                coordinates=torch.zeros(instance_counts.sum(), 3),
-                features=torch.cat(batch_dict['instance_landmarks']),
-                batch_counts=instance_counts,
-            )
-        else:
-            instances = None
-        
+        # collate landmark coordinates and classes        
         if 'landmarks' in batch_dict:
             landmark_counts = torch.cat([
                 torch.bincount(lands[:, 4].long(), minlength=points.shape[0])
@@ -175,12 +165,13 @@ class TeethLandDataModule(TeethSegDataModule):
         else:
             landmarks = None
 
+        instance_counts = torch.stack(batch_dict['instance_count'])
         points = x.new_tensor(features=torch.cat(batch_dict['labels']).flatten() - 1)
         instance_offsets = torch.arange(instance_counts.sum())
         instance_offsets = instance_offsets.repeat_interleave(point_counts)
         points.F[points.F >= 0] += instance_offsets[points.F >= 0]
 
-        return scan_file, is_lower, x, (instances, landmarks, points)
+        return scan_file, is_lower, x, (landmarks, points)
     
     def transfer_batch_to_device(
         self,

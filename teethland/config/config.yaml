@@ -1,5 +1,5 @@
 work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: mixedseg_fold2
+version: mixedseg_fold99
 seed: 0
 
 model:
@@ -77,15 +77,16 @@ model:
 accumulate_grad_batches: 1  # 1 better segmentation, worse classification
 gradient_clip_norm: 35  # 10 is worse
 
-out_dir: 'output'
+out_dir: ''
 datamodule:
   root: '/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper'
   root: '/home/mkaailab/Documents/IOS/3dteethland/code/input'
   root: '/home/mkaailab/Documents/IOS/Brazil/cases'
+  root: '/home/mkaailab/Documents/IOS/3dteethland/data/unseen'
   landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
   regex_filter: ''
   extensions: ['ply', 'stl', 'obj']
-  fold: 2
+  fold: 4
   clean: True  # TODO: Set to true for Grand Challenge inference
   val_size: 0.2
   include_val_as_train: false
@@ -94,16 +95,11 @@ datamodule:
   num_workers: 8
   pin_memory: True
   persistent_workers: False
-  # uniform_density_voxel_size: 0.025  # instseg
-  uniform_density_voxel_size: [0.025, 0.01]  # landmarks
+  uniform_density_voxel_size: [0.025, 0.01]  # instseg, landmarks
   boundary_aware:
     use: False
     voxel_size: 0.01
     sample_ratio: 0.25
   proposal_points: 10000
-  # proposal_points: 10000
   max_proposals: 16
-  include_cusps: false
-  to_left_right: false
-  separate_front_posterior: false
   distinguish_upper_lower: false  # True worse
