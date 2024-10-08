@@ -201,12 +201,10 @@ class RandomAxisFlip(object):
         self,
         axis: int=0,
         prob: float=0.5,
-        landmark_flip_idxs: Optional[List[int]]=None,
         rng: Optional[np.random.Generator]=None,
     ) -> None:
         self.axis = axis
         self.prob = prob
-        self.landmark_flip_idxs = landmark_flip_idxs
         self.rng = np.random.default_rng() if rng is None else rng
 
     def __call__(
@@ -226,7 +224,6 @@ class RandomAxisFlip(object):
                 data_dict['landmark_coords'][:, self.axis] = (
                     coords.max() + coords.min() - landmarks
                 )
-                data_dict['landmark_classes'] = self.landmark_flip_idxs[data_dict['landmark_classes']]
 
             if 'instance_centroids' in data_dict:
                 centroids = data_dict['instance_centroids'][:, self.axis]

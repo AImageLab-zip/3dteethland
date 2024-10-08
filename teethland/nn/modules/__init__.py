@@ -3,8 +3,6 @@ from teethland.nn.modules.attention import StratifiedCRPEAttention
 from teethland.nn.modules.criterion import (
     IdentificationLoss,
     LandmarkLoss,
-    LandmarkLoss,
-    PoolingLandmarkLoss,
     SpatialEmbeddingLoss,
 )
 from teethland.nn.modules.downsample import DownsampleBlock

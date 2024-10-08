@@ -7,15 +7,15 @@ import torch
 import yaml
 
 from teethland.datamodules import (
+    TeethBinSegDataModule,
     TeethInstSegDataModule,
     TeethLandDataModule,
     TeethMixedSegDataModule,
 )
 from teethland.models import (
+    BinSegNet,
     DentalNet,
     LandmarkNet,
-    LandmarkNet,
-    PoolingLandmarkNet,
 )
 
 
@@ -30,6 +30,8 @@ def main(stage: str, devices: int, checkpoint: str):
         dm = TeethInstSegDataModule(seed=config['seed'], **config['datamodule'])
     elif stage == 'mixedseg':
         dm = TeethMixedSegDataModule(seed=config['seed'], **config['datamodule'])
+    elif stage == 'binseg':
+        dm = TeethBinSegDataModule(seed=config['seed'], **config['datamodule'])
     elif stage == 'landmarks':
         dm = TeethLandDataModule(seed=config['seed'], **config['datamodule'])
 
@@ -59,12 +61,26 @@ def main(stage: str, devices: int, checkpoint: str):
         
         instseg_state = {k: v for k, v in instseg_state['state_dict'].items() if k not in pop_keys}
         print(model.load_state_dict(instseg_state, strict=False))
+    elif stage == 'binseg':
+        model = BinSegNet(
+            in_channels=dm.num_channels,
+            **config['model'][stage],
+        )
+
+        landmark_state = torch.load(config['model']['landmarks']['checkpoint_path'])
+        binseg_state = model.state_dict()
+        pop_keys = []
+        for k, v in landmark_state['state_dict'].items():
+            if k not in binseg_state:
+                continue
+            
+            if not torch.all(torch.tensor(binseg_state[k].shape) == torch.tensor(v.shape)):
+                pop_keys.append(k)
+        
+        landmark_state = {k: v for k, v in landmark_state['state_dict'].items() if k not in pop_keys}
+        print(model.load_state_dict(landmark_state, strict=False))        
     elif stage == 'landmarks':
-        # model = LandmarkNet.load_from_checkpoint(
-        model = LandmarkNet.load_from_checkpoint(
-        # model = OffsetLandmarkNet(
-        # model = PoolingLandmarkNet(
-        # model = LandmarkNet(
+        model = LandmarkNet(
             in_channels=dm.num_channels,
             num_classes=dm.num_classes,
             dbscan_cfg=config['model']['dbscan_cfg'],
@@ -92,8 +108,8 @@ def main(stage: str, devices: int, checkpoint: str):
     )
     metric_checkpoint_callback = ModelCheckpoint(
         save_top_k=3,
-        monitor='dice/val' if stage == 'landmarks' else 'fdi_f1/val_epoch',
-        mode='min' if stage == 'landmarks' else 'max',
+        monitor='dice/val' if stage in ['binseg', 'landmarks'] else 'fdi_f1/val_epoch',
+        mode='min' if stage in ['binseg', 'landmarks'] else 'max',
         filename='weights-{epoch:02d}',
     )
 
@@ -119,7 +135,7 @@ def main(stage: str, devices: int, checkpoint: str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('stage', choices=['instseg', 'mixedseg', 'landmarks'])
+    parser.add_argument('stage', choices=['instseg', 'mixedseg', 'binseg', 'landmarks'])
     parser.add_argument('--devices', required=False, default=1, type=int)
     parser.add_argument('--checkpoint', required=False, default=None)
     args = parser.parse_args()
