@@ -1,6 +1,8 @@
-# 3DTeethLand
+# ToothInstanceNet
 
-Welcome to the repository of our solution to the 3DTeethLand challenge.
+Welcome to the repository of our solution to the [3DTeethLand challenge](https://www.synapse.org/Synapse:syn57400900/wiki/).
+
+![alt text](docs/method.png "ToothInstanceNet")
 
 
 ## Install
