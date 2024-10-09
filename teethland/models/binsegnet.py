@@ -7,7 +7,6 @@ from torchmetrics.classification import (
     BinaryF1Score,    
     BinaryJaccardIndex,
 )
-from torchmetrics.regression import MeanSquaredError
 from torchtyping import TensorType
 
 from teethland import PointTensor
@@ -40,7 +39,9 @@ class BinSegNet(pl.LightningModule):
             **model_args,
         )
 
-        self.seg_criterion = nn.BCELoss()
+        self.seg_criterion = nn.BinarySegmentationLoss(
+            bce_weight=0.0, dice_weight=1.0, focal_weight=1.0,
+        )
 
         self.dice_train = BinaryF1Score()
         self.dice_val = BinaryF1Score()

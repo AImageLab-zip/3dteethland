@@ -1,5 +1,5 @@
 work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: binseg_fold1
+version: binseg_fold1_dice_focal
 seed: 0
 
 model:
