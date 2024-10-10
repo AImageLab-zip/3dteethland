@@ -32,6 +32,8 @@ def predict(stage: str, mixed: bool, devices: int, config: str):
             seed=config['seed'], **config['datamodule'],
         )
     
+    single_tooth = 'binseg' if stage == 'highres' else 'landmarks'
+    config['model']['single_tooth'] = config['model'][single_tooth]
     model = FullNet(
         in_channels=dm.num_channels,
         num_classes=dm.num_classes,
@@ -42,7 +44,7 @@ def predict(stage: str, mixed: bool, devices: int, config: str):
     logger = TensorBoardLogger(
         save_dir=config['work_dir'],
         name='',
-        version=f'landmarks_{config["version"]}',
+        version=f'{single_tooth}_{config["version"]}',
         default_hp_metric=False,
     )
     logger.log_hyperparams(config)
@@ -58,7 +60,7 @@ def predict(stage: str, mixed: bool, devices: int, config: str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('stage', choices=['instances', 'landmarks'])
+    parser.add_argument('stage', choices=['instances', 'highres', 'landmarks'])
     parser.add_argument('--mixed', action='store_true')
     parser.add_argument('--devices', required=False, default=1, type=int)
     parser.add_argument('--config', required=False, default='teethland/config/config.yaml', type=str)

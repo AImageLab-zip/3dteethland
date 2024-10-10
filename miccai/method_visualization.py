@@ -11,7 +11,7 @@ import yaml
 
 from teethland import PointTensor
 import teethland.data.transforms as T
-from teethland.models import DentalNet, LandmarkNet
+from teethland.models import DentalNet, LandmarkNet, BinSegNet
 from teethland.visualization import draw_landmarks
 
 palette = np.array([
@@ -41,7 +41,7 @@ palette = np.array([
 
 def load_open3d_mesh(root, case, arch):
     ms = pymeshlab.MeshSet()
-    ms.load_new_mesh(str(root / case / f'{case}_{arch}.obj'))
+    ms.load_new_mesh(str(root / case / f'{case}_{arch}.ply'))
     vertices = ms.current_mesh().vertex_matrix()
     normals = ms.current_mesh().vertex_normal_matrix()
 
@@ -64,7 +64,7 @@ def load_open3d_mesh(root, case, arch):
 
 def load_point_tensors(root, case, arch):
     ms = pymeshlab.MeshSet()
-    ms.load_new_mesh(str(root / case / f'{case}_{arch}.obj'))
+    ms.load_new_mesh(str(root / case / f'{case}_{arch}.ply'))
     vertices = ms.current_mesh().vertex_matrix()
     normals = ms.current_mesh().vertex_normal_matrix()
 
@@ -124,6 +124,12 @@ def show_classes(classes):
     classes.F[classes.F == 18] = 7
     classes.F[(21 <= classes.F) & (classes.F <= 27)] -= 20
     classes.F[classes.F == 28] = 7
+    classes.F[(71 <= classes.F) & (classes.F <= 75)] -= 63
+    classes.F[(31 <= classes.F) & (classes.F <= 37)] -= 30
+    classes.F[classes.F == 38] = 7
+    classes.F[(81 <= classes.F) & (classes.F <= 85)] -= 73
+    classes.F[(41 <= classes.F) & (classes.F <= 47)] -= 40
+    classes.F[classes.F == 48] = 7
 
     colors = palette[-classes.F.cpu().numpy() - 1] / 255
     mesh = load_open3d_mesh(root, case, arch)
@@ -186,15 +192,15 @@ def show_tooth_crop(points, instances):
     }
     data_dict = gen_proposals(**data_dict)
 
-    points = data_dict['points'][-2]
-    normals = data_dict['normals'][-2]
+    points = data_dict['points'][4]
+    normals = data_dict['normals'][4]
     pcd = open3d.geometry.PointCloud(points=open3d.utility.Vector3dVector(points))
     pcd.normals = open3d.utility.Vector3dVector(normals)
     pcd.colors = open3d.utility.Vector3dVector(np.full((normals.shape[0], 3), 100 / 255))
 
     open3d.visualization.draw_geometries([pcd])
 
-    diffs = points - data_dict['centroids'][-2, None]
+    diffs = points - data_dict['centroids'][4, None]
     pt = PointTensor(
         torch.from_numpy(points),
         torch.from_numpy(np.column_stack((points, normals, diffs))),
@@ -208,13 +214,11 @@ def show_tooth_crop(points, instances):
     pcd.colors = open3d.utility.Vector3dVector(data_norm)
     open3d.visualization.draw_geometries([pcd])
 
-    net = LandmarkNet.load_from_checkpoint(
+    net = BinSegNet.load_from_checkpoint(
         in_channels=9,
-        num_classes=5,
-        dbscan_cfg=config['model']['dbscan_cfg'],
-        **config['model']['landmarks']
+        **config['model']['binseg']
     ).to('cuda')
-    seg, mesial_distal, facial, outer, inner, cusps = net(pt)
+    seg = net(pt)
     
     foreground = torch.clip(seg.F[:, 0], -2, 2)
     foreground = foreground.float()
@@ -273,7 +277,7 @@ landmark_classes = {
 }
 def final_result(classes):
     ms = pymeshlab.MeshSet()
-    ms.load_new_mesh(str(root / case / f'{case}_{arch}.obj'))
+    ms.load_new_mesh(str(root / case / f'{case}_{arch}.ply'))
     vertices = ms.current_mesh().vertex_matrix()
     normals = ms.current_mesh().vertex_normal_matrix()
 
@@ -284,6 +288,13 @@ def final_result(classes):
     labels[labels == 18] = 7
     labels[(21 <= labels) & (labels <= 27)] -= 20
     labels[labels == 28] = 7
+
+    labels[(71 <= labels) & (labels <= 75)] -= 63
+    labels[(31 <= labels) & (labels <= 37)] -= 30
+    labels[labels == 38] = 7
+    labels[(81 <= labels) & (labels <= 85)] -= 73
+    labels[(41 <= labels) & (labels <= 47)] -= 40
+    labels[labels == 48] = 7
 
     colors = palette[-labels - 1] / 255
     mesh = open3d.geometry.PointCloud(
@@ -329,14 +340,16 @@ def final_result(classes):
 
 if __name__ == '__main__':
     root = Path('/home/mkaailab/Documents/IOS/3dteethland/data/lower_upper/')
+    root = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
     case, arch = '01J9K9S6', 'upper'
+    case, arch = 'TVSR5QBQ', 'lower'
     
     with open('teethland/config/config.yaml', 'r') as f:
         config = yaml.safe_load(f)        
     net = DentalNet.load_from_checkpoint(
         in_channels=6,
-        num_classes=7,
-        **config['model']['instseg'],
+        num_classes=12,
+        **config['model']['mixedseg'],
     ).to('cuda')
 
     points, instances, classes = load_point_tensors(root, case, arch)
@@ -348,7 +361,7 @@ if __name__ == '__main__':
     classes = classes[sample_idxs]
     offsets, sigmas, seeds, prototypes, _ = net(points, instances)
 
-    mesh = open3d.io.read_triangle_mesh(str(root / case / f'{case}_{arch}.obj'))
+    mesh = open3d.io.read_triangle_mesh(str(root / case / f'{case}_{arch}.ply'))
     mesh.compute_vertex_normals()
     mesh.vertex_colors = open3d.utility.Vector3dVector(np.full((points.C.shape[0], 3), 100 / 255))
     open3d.visualization.draw_geometries([mesh])
@@ -356,7 +369,7 @@ if __name__ == '__main__':
     mesh = load_open3d_mesh(root, case, arch)
     open3d.visualization.draw_geometries([mesh])
 
-    final_result(classes)
+    # final_result(classes)
     show_tooth_crop(points, instances)
     show_instances(instances)
     show_classes(classes)

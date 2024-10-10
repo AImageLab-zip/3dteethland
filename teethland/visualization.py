@@ -177,8 +177,9 @@ def check_predictions():
         # if not mesh_file.stem.startswith('G002'):
         #     continue
 
-        # if not mesh_file.stem == '4SA064Y7_upper':
-        #     continue
+        if not mesh_file.stem == 'TVSR5QBQ_lower':
+            ann_file = Path('output/TVSR5QBQ_lower.json')
+            continue
 
         # draw_instances(mesh_file, ann_file)
         # draw_proposal(mesh_file, ann_file)
@@ -203,26 +204,25 @@ def check_predictions():
         classes = np.full_like(labels, fill_value=-1)
         instances = np.array(ann['instances'])
 
-        if labels.shape[0] > vertices.shape[0]:
-            print('different shape!')
-            diff = labels.shape[0] - vertices.shape[0]
-            labels = labels[:-diff]
-            instances = instances[:-diff]
-        else:
-            continue
+        labels[(71 <= labels) & (labels <= 75)] -= 63
+        labels[(31 <= labels) & (labels <= 37)] -= 30
+        labels[labels == 38] = 7
+        labels[(81 <= labels) & (labels <= 85)] -= 73
+        labels[(41 <= labels) & (labels <= 47)] -= 40
+        labels[labels == 48] = 7
 
         _, inverse = np.unique(labels, return_inverse=True)
         print(_)
 
-        labels = np.clip(labels % 10, a_min=0, a_max=7)
-        classes = (instances == 2) - 1
+        # labels = np.clip(labels % 10, a_min=0, a_max=7)
+        # classes = (instances == 2) - 1
 
         mesh = open3d.geometry.TriangleMesh(
             vertices=open3d.utility.Vector3dVector(vertices),
             triangles=open3d.utility.Vector3iVector(triangles),
         )
         mesh.compute_vertex_normals()
-        mesh.vertex_colors = open3d.utility.Vector3dVector(palette[inverse - 1] / 255)
+        mesh.vertex_colors = open3d.utility.Vector3dVector(palette[instances - 1] / 255)
 
         open3d.visualization.draw_geometries([mesh], width=1600, height=900)
 

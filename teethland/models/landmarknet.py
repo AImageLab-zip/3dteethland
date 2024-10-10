@@ -42,7 +42,6 @@ class LandmarkNet(pl.LightningModule):
 
         model_args.pop('checkpoint_path', None)
         self.model = nn.StratifiedTransformer(
-            out_channels=[1, 4, 4, 4, 4, 4],
             **model_args,
         )
 

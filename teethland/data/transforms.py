@@ -795,6 +795,7 @@ class GenerateProposals:
         data_dict['labels'] = fg_masks.astype(int)
         data_dict['centroids'] = centroids
         data_dict['point_count'] = np.array([self.proposal_points]).repeat(centroids.shape[0])
+        data_dict['point_idxs'] = point_idxs
         data_dict['instance_count'] = centroids.shape[0]
 
         return data_dict

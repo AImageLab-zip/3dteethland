@@ -35,7 +35,6 @@ class BinSegNet(pl.LightningModule):
 
         model_args.pop('checkpoint_path', None)
         self.model = nn.StratifiedTransformer(
-            out_channels=1,
             **model_args,
         )
 

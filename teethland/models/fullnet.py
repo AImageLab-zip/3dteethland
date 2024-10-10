@@ -7,7 +7,6 @@ import torch
 from torch_scatter import scatter_mean
 from torchtyping import TensorType
 
-from sklearn.decomposition import PCA
 import teethland
 from teethland import PointTensor
 import teethland.data.transforms as T
@@ -15,12 +14,53 @@ from teethland.cluster import learned_region_cluster
 import teethland.nn as nn
 
 
+def non_max_suppression(
+    seg: PointTensor,
+    point_idxs: TensorType['K', 'N', torch.int64],
+    conf_thresh: float=0.5,
+    iou_thresh: float=0.35,
+):
+    fg_point_idxs, scores = [], []
+    for i in range(seg.batch_size):
+        fg_mask = seg.batch(i).F >= conf_thresh
+        fg_idxs = point_idxs[i][fg_mask]
+        fg_point_idxs.append(set(fg_idxs.cpu().tolist()))
+
+        score = seg.batch(i).F[fg_mask].mean()
+        scores.append(score)
+
+    sort_index = torch.argsort(torch.stack(scores), descending=True)
+    fg_point_idxs = [fg_point_idxs[idx.item()] for idx in sort_index]
+    
+    ious = torch.zeros(seg.batch_size, seg.batch_size)
+    for i in range(seg.batch_size):
+        for j in range(i + 1, seg.batch_size):
+            inter = len(fg_point_idxs[i] & fg_point_idxs[j])
+            union = len(fg_point_idxs[i] | fg_point_idxs[j])
+            iou = inter / union
+            ious[i, j] = iou
+
+    keep = torch.ones(seg.batch_size, dtype=torch.bool)
+    for index, iou in enumerate(ious):
+        if not keep[index]:
+            continue
+
+        condition = iou >= iou_thresh
+        keep = keep & ~condition
+
+    if not torch.all(keep):
+        print('NMS applied!')
+        k = 3
+
+    return sort_index[keep]
+
+
 class FullNet(pl.LightningModule):
 
     def __init__(
         self,
         instseg: Dict[str, Any],
-        landmarks: Dict[str, Any],
+        single_tooth: Dict[str, Any],
         proposal_points: int,
         dbscan_cfg: dict[str, Any],
         out_dir: Path,
@@ -44,13 +84,12 @@ class FullNet(pl.LightningModule):
         self.load_ckpt(self.identify_model, ckpt)
         
         # landmark prediction stage
-        ckpt = landmarks.pop('checkpoint_path')
-        self.landmarks_model = nn.StratifiedTransformer(
+        ckpt = single_tooth.pop('checkpoint_path')
+        self.single_tooth_model = nn.StratifiedTransformer(
             in_channels=9,
-            out_channels=[1, 4, 4, 4, 4, 4],
-            **landmarks,
+            **single_tooth,
         )
-        self.load_ckpt(self.landmarks_model, ckpt)
+        self.load_ckpt(self.single_tooth_model, ckpt)
 
         self.gen_proposals = T.GenerateProposals(proposal_points, max_proposals=32)
         self.dbscan_cfg = dbscan_cfg
@@ -127,12 +166,12 @@ class FullNet(pl.LightningModule):
 
         return x_rot, instances, labels
     
-    def landmarks_stage(
+    def single_tooth_stage(
         self,
         x: PointTensor,
         instances: PointTensor,
         labels: PointTensor,
-    ) -> Tuple[PointTensor, PointTensor]:
+    ) -> Tuple[PointTensor, Optional[PointTensor]]:
         instances = instances[x.cache['landmarks_downsample_idxs']]
         x_down = x[x.cache['landmarks_downsample_idxs']]
         
@@ -158,20 +197,31 @@ class FullNet(pl.LightningModule):
         )
 
         # run the proposals through the models
-        _, preds = self.landmarks_model(proposals)
-        seg = preds[0]
-        points_offsets = preds[1:]
+        _, preds = self.single_tooth_model(proposals)
+
+        # apply non-maximum suppression to remove redundant instances
+        seg = preds[0] if isinstance(preds, list) else preds
+        probs = seg.new_tensor(features=torch.sigmoid(seg.F[:, 0]))
+        point_idxs = torch.from_numpy(data_dict['point_idxs']).to(seg.F.device)
+        keep_idxs = non_max_suppression(probs, point_idxs)
+        probs = probs.batch(keep_idxs)
 
         # interpolate segmentations to original points
         instances = torch.full_like(x.F[:, 0], -1).long()
         max_probs = torch.zeros_like(instances).float()
-        probs = seg.new_tensor(features=torch.sigmoid(seg.F[:, 0]))
         for b in range(probs.batch_size):
             interp = probs.batch(b).interpolate(x, dist_thresh=0.03).F
             instances = torch.where((interp >= 0.5) & (interp > max_probs), b, instances)
             max_probs = torch.maximum(max_probs, interp)
         instances = x.new_tensor(features=instances)
         instances = self.trainer.datamodule.process_instances(instances)
+
+        if not isinstance(preds, list):
+            return instances, None
+        
+        # apply NMS selection
+        points_offsets = preds[1:]
+        points_offsets = [offsets.batch(keep_idxs) for offsets in points_offsets]
 
         # process point-level landmarks
         landmarks_list = []
@@ -209,7 +259,7 @@ class FullNet(pl.LightningModule):
             return instances, labels, None
         
         # stage 2
-        instances, landmarks = self.landmarks_stage(x, instances, labels)
+        instances, landmarks = self.single_tooth_stage(x, instances, labels)
 
         return instances, labels, landmarks
     

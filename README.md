@@ -23,7 +23,7 @@ pip install -r requirements.txt
 Lastly, compile and install the Cuda kernels.
 
 ``` bash
-pip install -e -v .
+pip install -v -e .
 ```
 
 

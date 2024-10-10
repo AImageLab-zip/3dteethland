@@ -179,13 +179,13 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
 
     def setup(self, stage: Optional[str]=None):
         if stage is None or stage == 'predict':
-            files = self._files('predict', exclude=[])
+            files = self._files('fit', exclude=[])
             print('Total number of files:', len(files))
-
+            train_files, val_files = self._split(files)
             self.pred_dataset = TeethSegDataset(
                 stage='predict',
                 root=self.root,
-                files=files,
+                files=val_files,
                 clean=self.clean,
                 transform=self.default_transforms,
             )
