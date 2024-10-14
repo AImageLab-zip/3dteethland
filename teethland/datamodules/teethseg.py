@@ -104,7 +104,10 @@ class TeethSegDataModule(pl.LightningDataModule):
                 annotation = json.load(f)
 
             subject = re.split('_|-', case_files[0].stem)[0]            
-            labels = np.unique(annotation['labels'])
+            labels = np.array(annotation['labels'])
+            _, instances, counts = np.unique(labels, return_inverse=True, return_counts=True)
+            labels[(counts < 100)[instances]] = 0
+            labels = np.unique(labels)
 
             subject_idx = subject_idxs.setdefault(subject, len(subject_idxs))
             subject_files[subject_idx].append(case_files)
