@@ -52,7 +52,7 @@ def non_max_suppression(
         print('NMS applied!')
         k = 3
 
-    return sort_index[keep]
+    return sort_index[keep].unique()
 
 
 class FullNet(pl.LightningModule):
@@ -171,7 +171,7 @@ class FullNet(pl.LightningModule):
         x: PointTensor,
         instances: PointTensor,
         labels: PointTensor,
-    ) -> Tuple[PointTensor, Optional[PointTensor]]:
+    ) -> Tuple[PointTensor, PointTensor, Optional[PointTensor]]:
         instances = instances[x.cache['landmarks_downsample_idxs']]
         x_down = x[x.cache['landmarks_downsample_idxs']]
         
@@ -205,6 +205,7 @@ class FullNet(pl.LightningModule):
         point_idxs = torch.from_numpy(data_dict['point_idxs']).to(seg.F.device)
         keep_idxs = non_max_suppression(probs, point_idxs)
         probs = probs.batch(keep_idxs)
+        labels = labels[keep_idxs]
 
         # interpolate segmentations to original points
         instances = torch.full_like(x.F[:, 0], -1).long()
@@ -217,7 +218,7 @@ class FullNet(pl.LightningModule):
         instances = self.trainer.datamodule.process_instances(instances)
 
         if not isinstance(preds, list):
-            return instances, None
+            return instances, labels, None
         
         # apply NMS selection
         points_offsets = preds[1:]
@@ -247,7 +248,7 @@ class FullNet(pl.LightningModule):
 
         landmarks = self.trainer.datamodule.process_landmarks(labels, landmarks)
 
-        return instances, landmarks
+        return instances, labels, landmarks
 
     def forward(
         self,
@@ -259,7 +260,7 @@ class FullNet(pl.LightningModule):
             return instances, labels, None
         
         # stage 2
-        instances, landmarks = self.single_tooth_stage(x, instances, labels)
+        instances, labels, landmarks = self.single_tooth_stage(x, instances, labels)
 
         return instances, labels, landmarks
     
@@ -279,13 +280,12 @@ class FullNet(pl.LightningModule):
         self.save_landmarks(landmarks)
 
     def save_segmentation(self, instances: PointTensor, labels: PointTensor):
-        labels = instances.new_tensor(
-            features=torch.where(instances.F >= 0, labels.F[instances.F], 0),
-        )
+        labels = torch.where(instances.F >= 0, labels.F[instances.F], 0)
+        instances = torch.unique(instances.F, return_inverse=True)[1] - 1
 
         out_dict = {
-            'instances': instances.F.cpu().tolist(),
-            'labels': labels.F.cpu().tolist(),
+            'instances': instances.cpu().tolist(),
+            'labels': labels.cpu().tolist(),
         }
         
         out_name = Path(self.trainer.datamodule.scan_file).with_suffix('.json')
@@ -294,7 +294,7 @@ class FullNet(pl.LightningModule):
         else:
             out_file = self.trainer.datamodule.root / out_name
         with open(out_file, 'w') as f:
-            json.dump(out_dict, f, indent=2)
+            json.dump(out_dict, f)
 
     def save_landmarks(self, landmarks: Optional[PointTensor]):
         if landmarks is None:

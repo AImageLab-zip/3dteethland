@@ -177,7 +177,7 @@ def check_predictions():
         # if not mesh_file.stem.startswith('G002'):
         #     continue
 
-        if not mesh_file.stem == 'TVSR5QBQ_lower':
+        if not mesh_file.stem == 'N001_upper':
             ann_file = Path('output/TVSR5QBQ_lower.json')
             continue
 
@@ -212,7 +212,7 @@ def check_predictions():
         labels[labels == 48] = 7
 
         _, inverse = np.unique(labels, return_inverse=True)
-        print(_)
+        print(np.unique(np.array(ann['labels'])))
 
         # labels = np.clip(labels % 10, a_min=0, a_max=7)
         # classes = (instances == 2) - 1
@@ -222,7 +222,7 @@ def check_predictions():
             triangles=open3d.utility.Vector3iVector(triangles),
         )
         mesh.compute_vertex_normals()
-        mesh.vertex_colors = open3d.utility.Vector3dVector(palette[instances - 1] / 255)
+        mesh.vertex_colors = open3d.utility.Vector3dVector(palette[instances] / 255)
 
         open3d.visualization.draw_geometries([mesh], width=1600, height=900)
 

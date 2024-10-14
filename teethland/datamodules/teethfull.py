@@ -63,9 +63,12 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
             ))
             unique, counts = torch.unique(torch.sort(edges, dim=-1)[0], dim=0, return_counts=True)
             border_vertex_idxs = unique[counts == 1].flatten()
-
-            labels = instances.F[vertex_idxs[border_vertex_idxs]]
-            if labels.shape[0] == 0 or labels[0] == -1 or not torch.all(labels[0] == labels):
+            border_vertex_idxs = torch.unique(vertex_idxs[border_vertex_idxs])
+            
+            labels = instances.F[border_vertex_idxs]
+            labels = labels[labels != -1]
+            
+            if labels.shape[0] == 0 or not torch.all(labels[0] == labels):
                 continue
 
             instances.F[vertex_idxs[edges.flatten()]] = labels[0].item()
@@ -101,6 +104,10 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
 
             cluster_vertex_idxs = fg_triangles[cluster_idxs == idx].flatten()
             instances.F[vertex_idxs[cluster_vertex_idxs]] = -1
+
+        # remove small instances
+        _, counts = torch.unique(instances.F, return_counts=True)
+        instances.F[(counts < 100)[instances.F + 1]] = -1
                 
         return instances
 
@@ -248,46 +255,6 @@ class TeethMixedFullDataModule(TeethInstFullDataModule):
     def num_classes(self) -> int:
         return 12 if self.filter or not self.distinguish_upper_lower else 24
 
-    def reorder_teeth(
-        self,
-        classes: PointTensor,
-        side_mask: TensorType['N', torch.bool],
-        dist_thresh_nonmolar: float=0.35,
-        dist_thresh_molar: float=0.5,
-    ) -> PointTensor:
-        # fix teeth labels iteratively on one side
-        side_idxs = torch.nonzero(side_mask)[:, 0]
-        side_classes = classes[side_idxs]
-        sort_cols = torch.column_stack((side_classes.F, side_classes.C[:, 1]))
-        _, argsort1 = torch.sort(sort_cols[:, 1], stable=True)
-        _, argsort0 = torch.sort(sort_cols[argsort1, 0], stable=True)
-        argsort = argsort1[argsort0]
-        batch_idxs = side_classes.batch_indices[argsort]
-        coords = side_classes.C[argsort]
-        for i in range(side_idxs.shape[0] - 1):
-            if batch_idxs[i] != batch_idxs[i + 1]:
-                continue
-
-            i_ = side_idxs[argsort[i]]
-            j_ = side_idxs[argsort[i + 1]]
-            if classes.F[i_] < 2:
-                continue
-            
-            dist_thresh = dist_thresh_nonmolar if classes.F[j_] < 5 else dist_thresh_molar
-            dist = torch.sqrt(torch.sum((coords[i, :2] - coords[i + 1, :2])**2))
-            dist_offset = classes.F[j_] - classes.F[i_]
-            if dist / dist_thresh < 1 + dist_offset:
-                continue
-            
-            classes.F[j_] = classes.F[i_] + (dist / dist_thresh).long()
-
-        # add third molar if three molars are present on one side
-        if (classes.F[side_idxs] >= 5).sum() == 3:
-            m3_idx = classes.C[classes.F >= 5, 1].argmax()
-            classes.F[torch.nonzero(classes.F >= 5)[m3_idx, 0]] = 7        
-
-        return classes
-
     def teeth_classes_to_labels(
         self,
         classes: PointTensor,
@@ -301,28 +268,21 @@ class TeethMixedFullDataModule(TeethInstFullDataModule):
             dim=1)
             is_incisor = torch.nonzero(is_incisor)[:, 0]
             is_incisor = is_incisor[torch.argsort(classes.C[is_incisor, 1])[:4]]
+            weights = 1 - (classes.F[is_incisor] % 7) / 2
 
-            if is_incisor.shape[0] <= 2:
+            if torch.sum(weights) < 2:
                 zero_x = 0.0
             else:
-                weights = 1 - (classes.F[is_incisor] % 7) / 2
                 zero_x = torch.sum(weights * classes.C[is_incisor, 0]) / torch.sum(weights)
 
             right = classes.batch(batch_idx).C[:, 0] < zero_x
             right_mask = torch.cat((right_mask, right))
 
-        # make room for third molars
+        # do reordering without primary/permanent 
         labels = classes.clone()
-        labels.F[labels.F >= 7] += 1
-
-        # do reordering without primary/permanent distinction
-        primary_mask = labels.F >= 8
-        labels.F = labels.F % 8
-
-        # fix duplicate classes on one side, introducing third molars
-        labels = self.reorder_teeth(labels, right_mask)
-        labels = self.reorder_teeth(labels, ~right_mask)
-
+        primary_mask = labels.F >= 7
+        labels.F = labels.F % 7
+        
         # translate index label to FDI label
         if self.filter == 'lower':
             labels.F += 31 + 10 * right_mask + 40 * primary_mask
@@ -330,9 +290,8 @@ class TeethMixedFullDataModule(TeethInstFullDataModule):
             if self.distinguish_upper_lower:
                 raise NotImplementedError()
             else:
-                labels.F = torch.clip(labels.F, 0, 7)
                 labels.F += 40 * primary_mask * (labels.F < 5)
-                labels.F += 20 * self.is_lower[classes.batch_indices]
+                labels.F += 20 * self.is_lower[labels.batch_indices]
                 
             labels.F += 11 + 10 * right_mask
         

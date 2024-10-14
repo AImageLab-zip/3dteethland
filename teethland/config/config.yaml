@@ -1,5 +1,5 @@
 work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: binseg_fold1_dice_focal
+version: 3dteethseg_train_original
 seed: 0
 
 model:
@@ -100,15 +100,16 @@ model:
 accumulate_grad_batches: 1  # 1 better segmentation, worse classification
 gradient_clip_norm: 35  # 10 is worse
 
-out_dir: 'output'
+out_dir: 'preds'
 datamodule:
   root: '/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper'
   root: '/home/mkaailab/Documents/IOS/3dteethland/code/input'
   root: '/home/mkaailab/Documents/IOS/Brazil/cases'
+  # root: '/mnt/diag/IOS/3dteethseg/challenge_dataset
   landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
   regex_filter: ''
   extensions: ['ply', 'stl', 'obj']
-  fold: 4
+  fold: 1
   clean: True  # TODO: Set to true for Grand Challenge inference
   val_size: 0.2
   include_val_as_train: false

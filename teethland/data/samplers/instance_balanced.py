@@ -20,8 +20,8 @@ class InstanceBalancedSampler(WeightedRandomSampler):
 
             labels = np.array(annotation['labels'])
             _, instances, counts = np.unique(labels, return_inverse=True, return_counts=True)
-            labels[(counts < 20)[instances]] = 0
-            labels = np.unique(annotation['labels'])
+            labels[(counts < 100)[instances]] = 0
+            labels = np.unique(labels)
 
             scan_labels[i, labels[1:]] = 1
 

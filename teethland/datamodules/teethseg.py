@@ -73,7 +73,7 @@ class TeethSegDataModule(pl.LightningDataModule):
         mesh_files = [f for f in mesh_files if f.stem not in exclude]
         mesh_files = [f.relative_to(self.root) for f in mesh_files]
 
-        ann_files = sorted(self.root.glob('**/*.json'))
+        ann_files = sorted(self.root.glob('**/*.json'))[::-1]
         if stage == 'predict' or not ann_files or (
             hasattr(self, 'batch') and self.batch is not None
         ):
@@ -103,11 +103,7 @@ class TeethSegDataModule(pl.LightningDataModule):
             with open(self.root / case_files[1], 'rb') as f:
                 annotation = json.load(f)
 
-            subject = re.split('_|-', case_files[0].stem)[0]
-            
-            labels = np.array(annotation['labels'])
-            _, instances, counts = np.unique(labels, return_inverse=True, return_counts=True)
-            labels[(counts < 20)[instances]] = 0
+            subject = re.split('_|-', case_files[0].stem)[0]            
             labels = np.unique(annotation['labels'])
 
             subject_idx = subject_idxs.setdefault(subject, len(subject_idxs))
