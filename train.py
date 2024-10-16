@@ -36,49 +36,17 @@ def main(stage: str, devices: int, checkpoint: str):
         dm = TeethLandDataModule(seed=config['seed'], **config['datamodule'])
 
     # dm.setup('fit')
-    if stage == 'instseg':
+    if stage in ['instseg', 'mixedseg']:
         model = DentalNet(
             in_channels=dm.num_channels,
             num_classes=dm.num_classes,
             **config['model'][stage],
         )
-    elif stage == 'mixedseg':
-        model = DentalNet(
-            in_channels=dm.num_channels,
-            num_classes=dm.num_classes,
-            **config['model'][stage],
-        )
-
-        instseg_state = torch.load(config['model']['instseg']['checkpoint_path'])
-        mixedseg_state = model.state_dict()
-        pop_keys = []
-        for k, v in instseg_state['state_dict'].items():
-            if k not in mixedseg_state:
-                continue
-            
-            if not torch.all(torch.tensor(mixedseg_state[k].shape) == torch.tensor(v.shape)):
-                pop_keys.append(k)
-        
-        instseg_state = {k: v for k, v in instseg_state['state_dict'].items() if k not in pop_keys}
-        print(model.load_state_dict(instseg_state, strict=False))
     elif stage == 'binseg':
         model = BinSegNet(
             in_channels=dm.num_channels,
             **config['model'][stage],
-        )
-
-        landmark_state = torch.load(config['model']['landmarks']['checkpoint_path'])
-        binseg_state = model.state_dict()
-        pop_keys = []
-        for k, v in landmark_state['state_dict'].items():
-            if k not in binseg_state:
-                continue
-            
-            if not torch.all(torch.tensor(binseg_state[k].shape) == torch.tensor(v.shape)):
-                pop_keys.append(k)
-        
-        landmark_state = {k: v for k, v in landmark_state['state_dict'].items() if k not in pop_keys}
-        print(model.load_state_dict(landmark_state, strict=False))        
+        )     
     elif stage == 'landmarks':
         model = LandmarkNet(
             in_channels=dm.num_channels,

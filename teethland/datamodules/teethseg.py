@@ -73,7 +73,7 @@ class TeethSegDataModule(pl.LightningDataModule):
         mesh_files = [f for f in mesh_files if f.stem not in exclude]
         mesh_files = [f.relative_to(self.root) for f in mesh_files]
 
-        ann_files = sorted(self.root.glob('**/*.json'))[::-1]
+        ann_files = sorted(self.root.glob('**/*.json'))
         if stage == 'predict' or not ann_files or (
             hasattr(self, 'batch') and self.batch is not None
         ):

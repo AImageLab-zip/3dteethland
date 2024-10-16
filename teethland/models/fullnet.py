@@ -15,32 +15,33 @@ import teethland.nn as nn
 
 
 def non_max_suppression(
-    seg: PointTensor,
+    probs: PointTensor,
     point_idxs: TensorType['K', 'N', torch.int64],
     conf_thresh: float=0.5,
     iou_thresh: float=0.35,
+    score_thresh: float=0.75,
 ):
-    fg_point_idxs, scores = [], []
-    for i in range(seg.batch_size):
-        fg_mask = seg.batch(i).F >= conf_thresh
+    fg_point_idxs, scores = [], torch.empty(0).to(probs.F)
+    for i in range(probs.batch_size):
+        fg_mask = probs.batch(i).F >= conf_thresh
         fg_idxs = point_idxs[i][fg_mask]
         fg_point_idxs.append(set(fg_idxs.cpu().tolist()))
 
-        score = seg.batch(i).F[fg_mask].mean()
-        scores.append(score)
+        score = probs.batch(i).F[fg_mask].mean()
+        scores = torch.cat((scores, score[None]))
 
-    sort_index = torch.argsort(torch.stack(scores), descending=True)
+    sort_index = torch.argsort(scores, descending=True)
     fg_point_idxs = [fg_point_idxs[idx.item()] for idx in sort_index]
     
-    ious = torch.zeros(seg.batch_size, seg.batch_size)
-    for i in range(seg.batch_size):
-        for j in range(i + 1, seg.batch_size):
+    ious = torch.zeros(probs.batch_size, probs.batch_size).to(probs.F)
+    for i in range(probs.batch_size):
+        for j in range(i + 1, probs.batch_size):
             inter = len(fg_point_idxs[i] & fg_point_idxs[j])
             union = len(fg_point_idxs[i] | fg_point_idxs[j])
             iou = inter / union
             ious[i, j] = iou
 
-    keep = torch.ones(seg.batch_size, dtype=torch.bool)
+    keep = scores >= score_thresh
     for index, iou in enumerate(ious):
         if not keep[index]:
             continue
@@ -176,36 +177,46 @@ class FullNet(pl.LightningModule):
         x_down = x[x.cache['landmarks_downsample_idxs']]
         
         # generate proposals based on predicted instances
-        data_dict = {
-            'points': x_down.C.cpu().numpy(),
-            'instances': instances.F.cpu().numpy(),
-            'instance_centroids': labels.C.cpu().numpy(),
-            'normals': x_down.F[:, 3:].cpu().numpy(),
-        }
-        data_dict = self.gen_proposals(**data_dict)
-        points = torch.from_numpy(data_dict['points']).to(x.C)
-        normals = torch.from_numpy(data_dict['normals']).to(x.C)
-        centroids = torch.from_numpy(data_dict['instance_centroids']).to(x.C)
-        proposals = PointTensor(
-            coordinates=points.reshape(-1, 3),
-            features=torch.column_stack((
-                points.reshape(-1, 3),
-                normals.reshape(-1, 3),
-                (points - centroids[:, None]).reshape(-1, 3),
-            )),
-            batch_counts=torch.tensor([points.shape[1]]*points.shape[0]).to(x.C.device),
-        )
+        for _ in range(2):
+            data_dict = {
+                'points': x_down.C.cpu().numpy(),
+                'instances': instances.F.cpu().numpy(),
+                'instance_centroids': labels.C.cpu().numpy(),
+                'normals': x_down.F[:, 3:].cpu().numpy(),
+            }
+            data_dict = self.gen_proposals(**data_dict)
+            points = torch.from_numpy(data_dict['points']).to(x.C)
+            normals = torch.from_numpy(data_dict['normals']).to(x.C)
+            centroids = torch.from_numpy(data_dict['instance_centroids']).to(x.C)
+            proposals = PointTensor(
+                coordinates=points.reshape(-1, 3),
+                features=torch.column_stack((
+                    points.reshape(-1, 3),
+                    normals.reshape(-1, 3),
+                    (points - centroids[:, None]).reshape(-1, 3),
+                )),
+                batch_counts=torch.tensor([points.shape[1]]*points.shape[0]).to(x.C.device),
+            )
 
-        # run the proposals through the models
-        _, preds = self.single_tooth_model(proposals)
+            # run the proposals through the models
+            _, preds = self.single_tooth_model(proposals)
+            seg = preds[0] if isinstance(preds, list) else preds
+            probs = seg.new_tensor(features=torch.sigmoid(seg.F[:, 0]))
 
-        # apply non-maximum suppression to remove redundant instances
-        seg = preds[0] if isinstance(preds, list) else preds
-        probs = seg.new_tensor(features=torch.sigmoid(seg.F[:, 0]))
-        point_idxs = torch.from_numpy(data_dict['point_idxs']).to(seg.F.device)
-        keep_idxs = non_max_suppression(probs, point_idxs)
-        probs = probs.batch(keep_idxs)
-        labels = labels[keep_idxs]
+            # apply non-maximum suppression to remove redundant instances
+            point_idxs = torch.from_numpy(data_dict['point_idxs']).to(seg.F.device)
+            keep_idxs = non_max_suppression(probs, point_idxs)
+            instances = torch.where(torch.any(instances.F == keep_idxs[:, None], dim=0), instances.F, -1)
+            instances = x_down.new_tensor(features=torch.unique(instances, return_inverse=True)[1] - 1)
+            labels = labels[keep_idxs]
+            probs = probs.batch(keep_idxs)
+
+            # update the centroids for the second run
+            labels._coordinates = scatter_mean(
+                src=probs.C[probs.F >= 0.5],
+                index=probs.batch_indices[probs.F >= 0.5],
+                dim=0,
+            )
 
         # interpolate segmentations to original points
         instances = torch.full_like(x.F[:, 0], -1).long()

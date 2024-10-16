@@ -3,10 +3,8 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-import open3d
-from scipy.optimize import linear_sum_assignment
 from scipy.special import softmax
-from scipy.stats import truncnorm
+from scipy.stats import multivariate_normal, truncnorm
 from sklearn.decomposition import PCA
 import torch
 from torch_scatter import scatter_mean, scatter_min
@@ -239,6 +237,46 @@ class RandomAxisFlip(object):
         return '\n'.join([
             self.__class__.__name__ + '(',
             f'    prob: {self.prob},',
+            ')',
+        ])
+    
+
+class RandomShiftCentroids:
+
+    def __init__(
+        self,
+        pos_sample: float=0.30,  # 0.6666 ** 3
+        rng: Optional[np.random.Generator]=None,
+    ) -> None:
+        self.pos_sample = pos_sample
+        self.rng = np.random.default_rng() if rng is None else rng
+
+    def __call__(
+        self,
+        points: NDArray[Any],
+        instances: NDArray[Any],
+        instance_centroids: NDArray[Any],
+        **data_dict: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        out = []
+        for i, mean in enumerate(instance_centroids):
+            cov = np.cov(points[instances == i].T)
+            samples = multivariate_normal.rvs(mean, cov, size=1000, random_state=self.rng)
+            probs = multivariate_normal.pdf(samples, mean, cov)
+            
+            pos_mask = probs >= np.quantile(probs, 1 - self.pos_sample)
+            out.append(samples[pos_mask][0])
+        
+        data_dict['points'] = points
+        data_dict['instances'] = instances
+        data_dict['instance_centroids'] = np.stack(out)
+
+        return data_dict        
+
+    def __repr__(self) -> str:
+        return '\n'.join([
+            self.__class__.__name__ + '(',
+            f'    pos_sample: {self.pos_sample},',
             ')',
         ])
 

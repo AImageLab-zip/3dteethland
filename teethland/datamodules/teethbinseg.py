@@ -58,6 +58,7 @@ class TeethBinSegDataModule(TeethSegDataModule):
                 T.RandomAxisFlip(rng=rng),
                 T.RandomScale(rng=rng),
                 T.RandomZAxisRotate(rng=rng),
+                T.RandomShiftCentroids(rng=rng),
                 default_transforms,
             )
 

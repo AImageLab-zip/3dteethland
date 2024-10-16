@@ -7,7 +7,7 @@ def learned_region_cluster(
     sigmas,
     seeds,
     min_seed_score: float=0.9,
-    min_cluster_size: int=18,
+    min_cluster_size: int=16,
     min_unclustered: float=0.4,
 ):
     clusters = [torch.full((n,1), -1).to(seeds.F).long() for n in seeds.batch_counts]
@@ -36,7 +36,7 @@ def learned_region_cluster(
                 dim=1,
                 keepdim=True,
             ))  # 1 x d x h x w
-            proposal = probs >= 0.75
+            proposal = probs >= 0.7
 
             num_points = proposal.sum()
             overlap = mask_b[proposal].sum() / num_points

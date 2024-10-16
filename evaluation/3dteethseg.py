@@ -1,4 +1,6 @@
+from functools import partial
 import math
+import multiprocessing as mp
 from pathlib import Path
 import json
 
@@ -187,43 +189,52 @@ def get_teeth_vertices(mesh, labels_path):
     return teeth_list, teeth_centers
 
 
+def process_scan(gt_files, pred_filename):
+    with open(pred_filename, 'r') as f:
+        pred_label_dict = json.load(f)
+    pred_label_dict['instances'] = (np.array(pred_label_dict['instances']) + 1).tolist()
+
+    # load ground-truth segmentations
+    gt_filename = [f for f in gt_files if f.name == pred_filename.name][0]
+    with open(gt_filename, 'r') as f:
+        gt_label_dict = json.load(f)
+
+    instances = np.array(gt_label_dict['instances'])
+    _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
+
+    labels = np.array(gt_label_dict['labels'])
+    labels[(counts < 100)[instances]] = 0
+    instances[(counts < 100)[instances]] = 0
+    gt_label_dict['labels'] = labels.tolist()
+    gt_label_dict['instances'] = instances.tolist()
+    
+    ms = pymeshlab.MeshSet()
+    ms.load_new_mesh(str(gt_filename.with_suffix('.obj')))
+    vertices = ms.current_mesh().vertex_matrix()
+    gt_label_dict['mesh_vertices'] = vertices
+
+    jaw_TLA, jaw_TSA, jaw_TIR = calculate_metrics(gt_label_dict, pred_label_dict)
+
+    return math.exp(-jaw_TLA), jaw_TSA, jaw_TIR
+
+
+
 if __name__ == "__main__":
-    gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
-    pred_dir = Path('output')
+    # gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')    
+    gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
+    pred_dir = Path('3dteethseg_2m2')
     TLA, TSA, TIR = [], [], []
 
-    ms = pymeshlab.MeshSet()
-    for pred_filename in tqdm(sorted(pred_dir.glob('*'))):
-        with open(pred_filename, 'r') as f:
-            pred_label_dict = json.load(f)
-        pred_label_dict['instances'] = (np.array(pred_label_dict['instances']) + 1).tolist()
+    gt_files = sorted(gt_dir.glob(f'**/*.json'))
+    pred_files = sorted(pred_dir.glob('*'))
 
-        # load ground-truth segmentations
-        gt_filename = next(gt_dir.glob(f'**/{pred_filename.name}'))
-        with open(gt_filename, 'r') as f:
-            gt_label_dict = json.load(f)
-
-        instances = np.array(gt_label_dict['instances'])
-        _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
-
-        labels = np.array(gt_label_dict['labels'])
-        instances[(counts < 100)[instances]] = 0
-        labels[(counts < 100)[instances]] = 0
-        gt_label_dict['labels'] = labels.tolist()
-        gt_label_dict['instances'] = instances.tolist()
-
-        ms.load_new_mesh(str(gt_filename.with_suffix('.ply')))
-        vertices = ms.current_mesh().vertex_matrix()
-        gt_label_dict['mesh_vertices'] = vertices
-
-        
-        
-        
-
-        jaw_TLA, jaw_TSA, jaw_TIR = calculate_metrics(gt_label_dict, pred_label_dict)
-        TLA.append(math.exp(-jaw_TLA))
-        TSA.append(jaw_TSA)
-        TIR.append(jaw_TIR)
+    with mp.Pool(16) as p:
+        i = p.imap_unordered(partial(process_scan, gt_files), pred_files)
+        for tla, tsa, tir in tqdm(i, total=len(pred_files)):
+            
+            TLA.append(tla)
+            TSA.append(tsa)
+            TIR.append(tir)
 
     score = (np.mean(TSA) + np.mean(TLA) + np.mean(TIR))/3
     print("TSA : {} +- {}".format(np.mean(TSA), np.std(TSA)))

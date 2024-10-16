@@ -66,9 +66,8 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
             border_vertex_idxs = torch.unique(vertex_idxs[border_vertex_idxs])
             
             labels = instances.F[border_vertex_idxs]
-            labels = labels[labels != -1]
             
-            if labels.shape[0] == 0 or not torch.all(labels[0] == labels):
+            if labels.shape[0] == 0 or torch.any(labels == -1) or not torch.all(labels[0] == labels):
                 continue
 
             instances.F[vertex_idxs[edges.flatten()]] = labels[0].item()
@@ -188,11 +187,11 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
         if stage is None or stage == 'predict':
             files = self._files('fit', exclude=[])
             print('Total number of files:', len(files))
-            train_files, val_files = self._split(files)
+            # train_files, val_files = self._split(files)
             self.pred_dataset = TeethSegDataset(
                 stage='predict',
                 root=self.root,
-                files=val_files,
+                files=files,
                 clean=self.clean,
                 transform=self.default_transforms,
             )
@@ -259,7 +258,6 @@ class TeethMixedFullDataModule(TeethInstFullDataModule):
         self,
         classes: PointTensor,
     ) -> PointTensor:
-
         # determine tooth instances on the right side of the arch
         right_mask = torch.zeros(0, dtype=torch.bool, device=classes.C.device)
         for batch_idx in range(classes.batch_size):

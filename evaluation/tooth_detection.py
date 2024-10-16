@@ -52,25 +52,25 @@ def process_scan(pred_label_dict, gt_label_dict, iou_thresh: float=0.5):
 
 
 if __name__ == "__main__":
-    gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
-    pred_dir = Path('preds')
+    gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
+    pred_dir = Path('3dteethseg_2m2')
     TLA, TSA, TIR = [], [], []
+    verbose = False
 
     stats = {'names': [], 'fps': [], 'fns': [], 'tps': [], 'dices': [], 'gt_labels': [], 'pred_labels': []}
+
+    gt_files = sorted(gt_dir.glob('**/*.json'))
 
     pred_files = sorted(pred_dir.glob('*'))[:]
     fail_files = []
     i = 0
-    for pred_filename in tqdm(pred_files):
-        if pred_filename.stem.startswith('LNELLH3H'):
-            continue
-        
+    for pred_filename in tqdm(pred_files):        
         with open(pred_filename, 'r') as f:
             pred_label_dict = json.load(f)
         pred_label_dict['instances'] = (np.array(pred_label_dict['instances']) + 1).tolist()
 
         # load ground-truth segmentations
-        gt_filename = next(gt_dir.glob(f'**/{pred_filename.name}'))
+        gt_filename = [f for f in gt_files if f.name == pred_filename.name][0]
         with open(gt_filename, 'r') as f:
             gt_label_dict = json.load(f)
 
@@ -86,14 +86,15 @@ if __name__ == "__main__":
         gt_label_dict['instances'] = instances.tolist()
 
         tps, fps, fns, tooth_dices, gt_labels, pred_labels = process_scan(pred_label_dict, gt_label_dict)
-        if False:
-        # if fps or fns:
+        # if False:
+        if fns:
             fail_files.append(i)
             _, counts = np.unique(pred_label_dict['instances'], return_counts=True)
             print(pred_filename, fps, fns, tps, counts)
-            
 
-            mesh_file = gt_dir / pred_filename.stem.split('_')[0] / f'{pred_filename.stem}.ply'
+            
+        if verbose and (fps or fns):
+            mesh_file = gt_filename.with_suffix('.obj')
 
             ms = pymeshlab.MeshSet()
             ms.load_new_mesh(str(mesh_file))
@@ -131,12 +132,17 @@ if __name__ == "__main__":
     pred_labels = np.array(stats['pred_labels'])
     print('Tooth macro-F1:', f1_score(gt_labels, pred_labels, average='macro'))
 
-    gt_labels -= 10 * ((gt_labels // 10) % 2 == 0)
-    pred_labels -= 10 * ((pred_labels // 10) % 2 == 0)
+    with open('failures.txt', 'w') as f:
+        for idx in fail_files:
+            f.write(pred_files[idx].stem + '\n')
 
+    upper_mask = gt_labels < 30
+
+    cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[upper_mask], pred_labels[upper_mask])
+    cmd.plot()
+    plt.show(block=True)
     
-
-    cmd = ConfusionMatrixDisplay.from_predictions(gt_labels, pred_labels)
+    cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[~upper_mask], pred_labels[~upper_mask])
     cmd.plot()
     plt.show(block=True)
 

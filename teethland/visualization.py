@@ -158,26 +158,31 @@ def check_predictions():
     root = Path('/home/mkaailab/Documents/CBCT/fusion/stls')
     root = Path('/home/mkaailab/Documents/IOS/Katja VOs/transfer_2892173_files_6b1a93dd')
     root = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
+    root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     # root = Path('input').resolve()
     # root = Path('/home/mkaailab/Documents/IOS/Maud Wijbrands/root')
     mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('*.ply')))
     ann_files = sorted(root.glob('**/*er.json'))
+    # ann_files = sorted(root.glob('**/*er.json'))
     clean = False
 
     start_idx = 0
     # files = mesh_files[start_idx:]
-    for i, ann_file in enumerate(ann_files):
-        mesh_file = sorted(root.glob(f'{ann_file.name.split("_")[0]}/{ann_file.stem}*'))[-1]
-        mesh_file = root.parent / 'cases' / ann_file.stem.split('_')[0] / f'{ann_file.stem}.ply'
+    for i, mesh_file in enumerate(mesh_files):
+        # mesh_file = sorted(root.glob(f'{ann_file.name.split("_")[0]}/{ann_file.stem}*'))[-1]
+        # mesh_file = root.parent / 'cases' / ann_file.stem.split('_')[0] / f'{ann_file.stem}.ply'
+        # ann_file = Path(f'dentalnetPr/{mesh_file.stem}.json')
+        ann_file = [f for f in ann_files if f.stem == mesh_file.stem][0]
+        # ann_file = next(root.parent.glob(f'**/{mesh_file.stem}.json'))
         if not ann_file.exists():
             continue
         # ann_file = mesh_file.with_suffix('.json')
-        print(i, ':', mesh_file.stem)
+        print(i, ':', mesh_file.stem, ann_file)
 
         # if not mesh_file.stem.startswith('G002'):
         #     continue
 
-        if not mesh_file.stem == 'N001_upper':
+        if not mesh_file.stem == 'DG27PDD4_upper':
             ann_file = Path('output/TVSR5QBQ_lower.json')
             continue
 

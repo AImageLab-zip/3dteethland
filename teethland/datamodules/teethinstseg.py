@@ -199,10 +199,10 @@ class TeethInstSegDataModule(TeethSegDataModule):
             
             classes.F[j_] = classes.F[i_] + (dist / dist_thresh).long()
 
-        # add third molar if three molars are present on one side
-        if (classes.F[side_idxs] >= 5).sum() == 3:
-            m3_idx = classes.C[classes.F >= 5, 1].argmax()
-            classes.F[torch.nonzero(classes.F >= 5)[m3_idx, 0]] = 7        
+        # add third molar if two second molars are present on one side
+        if (classes.F[side_idxs] >= 6).sum() == 2:
+            m3_idx = classes.C[side_idxs][classes.F[side_idxs] >= 6, 1].argmax()
+            classes.F[side_idxs[torch.nonzero(classes.F[side_idxs] >= 6)[m3_idx, 0]]] = 7
 
         return classes
 
@@ -210,18 +210,19 @@ class TeethInstSegDataModule(TeethSegDataModule):
         self,
         classes: PointTensor,
     ) -> PointTensor:
-
         # determine tooth instances on the right side of the arch
         right_mask = torch.zeros(0, dtype=torch.bool, device=classes.C.device)
         for batch_idx in range(classes.batch_size):
-            is_incisor = (classes.batch_indices == batch_idx) & (classes.F <= 1)
+            is_incisor = (classes.batch_indices == batch_idx) & torch.any(
+                classes.F[:, None] == torch.tensor([[0, 1, 7, 8]]).to(classes.F),
+            dim=1)
             is_incisor = torch.nonzero(is_incisor)[:, 0]
             is_incisor = is_incisor[torch.argsort(classes.C[is_incisor, 1])[:4]]
+            weights = 1 - (classes.F[is_incisor] % 7) / 2
 
-            if is_incisor.shape[0] <= 2:
+            if torch.sum(weights) < 2:
                 zero_x = 0.0
             else:
-                weights = 1 - classes.F[is_incisor] / 2
                 zero_x = torch.sum(weights * classes.C[is_incisor, 0]) / torch.sum(weights)
 
             right = classes.batch(batch_idx).C[:, 0] < zero_x
