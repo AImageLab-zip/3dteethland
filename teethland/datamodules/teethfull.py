@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import open3d
+from pygco import cut_from_graph
 import torch
 from torchtyping import TensorType
 
@@ -27,10 +28,58 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
             self.default_transforms,
         )
 
-    def process_instances(
+
+    def _min_graph_cut(
         self,
         instances: PointTensor,
-    ) -> PointTensor:
+        max_probs: TensorType['N', torch.float32],
+    ) -> TensorType['N', torch.bool]:
+        # use minimum cut to derive foreground points
+        edge_idxs = torch.cat((
+            self.triangles[:, [0, 1]],
+            self.triangles[:, [0, 2]],
+            self.triangles[:, [1, 2]],
+        ))
+        edge_idxs = torch.unique(torch.sort(edge_idxs, dim=-1)[0], dim=0)
+
+        # unaries
+        round_factor = 100
+        max_probs[max_probs < 1e-6] = 1e-6
+        probs = torch.column_stack((1 - max_probs, max_probs))
+        unaries = -round_factor * torch.log10(probs)
+        unaries = unaries.int()
+
+        # pairwise
+        pairwise = 1 - torch.eye(2).to(unaries)
+
+        # edge weights
+        lambda_c = 30
+        cos_theta = torch.einsum('ni,ni->n', self.normals[edge_idxs[:, 0]], self.normals[edge_idxs[:, 1]])
+        cos_theta = cos_theta.clip(-0.9999, 0.9999)
+        theta = torch.arccos(cos_theta)
+        phi = torch.linalg.norm(instances.C[edge_idxs[:, 0]] - instances.C[edge_idxs[:, 1]], dim=-1)
+        beta = 1 + cos_theta
+        weights = torch.where(
+            theta > np.pi/2.0,
+            -torch.log10(theta / np.pi) * phi,
+            -beta * torch.log10(theta / np.pi) * phi
+        )
+        weights *= lambda_c * round_factor
+        edge_weights = torch.column_stack((edge_idxs, weights)).to(unaries)
+
+        # determine graph-cut and select label points
+        foreground = torch.from_numpy(cut_from_graph(
+            edge_weights.cpu().numpy(),
+            unaries.cpu().numpy(),
+            pairwise.cpu().numpy(),
+        )).to(instances.F)
+
+        return foreground == 1
+    
+    def _fill_background_triangles(
+        self,
+        instances: PointTensor,
+    ) -> TensorType['N', torch.int64]:
         # determine mesh of background triangles
         bg_mask = instances.F == -1
 
@@ -54,14 +103,15 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
         cluster_idxs = torch.from_numpy(np.asarray(cluster_idxs)).to(instances.F)
         
         # add connected triangles surrounded by one instance to that instance
+        out = instances.F.clone()
         vertex_idxs = torch.nonzero(vertex_mask)[:, 0]
         for idx in torch.unique(cluster_idxs):
-            edges = torch.concatenate((
+            edge_idxs = torch.concatenate((
                 bg_triangles[cluster_idxs == idx][:, [0, 1]],
                 bg_triangles[cluster_idxs == idx][:, [0, 2]],
                 bg_triangles[cluster_idxs == idx][:, [1, 2]],
             ))
-            unique, counts = torch.unique(torch.sort(edges, dim=-1)[0], dim=0, return_counts=True)
+            unique, counts = torch.unique(torch.sort(edge_idxs, dim=-1)[0], dim=0, return_counts=True)
             border_vertex_idxs = unique[counts == 1].flatten()
             border_vertex_idxs = torch.unique(vertex_idxs[border_vertex_idxs])
             
@@ -70,8 +120,15 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
             if labels.shape[0] == 0 or torch.any(labels == -1) or not torch.all(labels[0] == labels):
                 continue
 
-            instances.F[vertex_idxs[edges.flatten()]] = labels[0].item()
+            print('Filled background!')
+            out[vertex_idxs[edge_idxs.flatten()]] = labels[0].item()
 
+        return out
+    
+    def _remove_foreground_triangles(
+        self,
+        instances: PointTensor,
+    ) -> TensorType['N', torch.int64]:
         # determine mesh of tooth triangles
         fg_mask = instances.F >= 0
 
@@ -96,13 +153,30 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
         cluster_areas = torch.from_numpy(np.asarray(cluster_areas)).to(instances.C)
 
         # remove small connected components
+        out = instances.F.clone()
         vertex_idxs = torch.nonzero(vertex_mask)[:, 0]
         for idx in torch.unique(cluster_idxs):
             if cluster_areas[idx] >= 0.005:
                 continue
 
+            print('Removed foreground!')
             cluster_vertex_idxs = fg_triangles[cluster_idxs == idx].flatten()
-            instances.F[vertex_idxs[cluster_vertex_idxs]] = -1
+            out[vertex_idxs[cluster_vertex_idxs]] = -1
+
+        return out
+
+    def process_instances(
+        self,
+        instances: PointTensor,
+        max_probs: TensorType['N', torch.float32],
+    ) -> PointTensor:
+        # determine and label foreground points
+        foreground = self._min_graph_cut(instances, max_probs)
+        instances.F = torch.where(foreground, instances.F, -1)
+
+        # fill surrounded background patches and remove small foreground patches
+        instances.F = self._fill_background_triangles(instances)
+        instances.F = self._remove_foreground_triangles(instances)
 
         # remove small instances
         _, counts = torch.unique(instances.F, return_counts=True)
@@ -211,6 +285,7 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
         scan_file = batch_dict['scan_file'][0]
         is_lower = torch.stack(batch_dict['is_lower'])
         triangles = torch.cat(batch_dict['triangles'])
+        normals = torch.cat(batch_dict['normals'])
         affine = torch.stack(batch_dict['affine'])
 
         # collate input points and features
@@ -232,7 +307,7 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
             batch_dict['ud_downsample_count_2'],
         )
 
-        return scan_file, is_lower, triangles, affine, x
+        return scan_file, is_lower, triangles, normals, affine, x
 
     def transfer_batch_to_device(
         self,
@@ -243,9 +318,10 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
         self.scan_file = batch[0]
         self.is_lower = batch[1].to(device)
         self.triangles = batch[2].to(device)
-        self.affine = batch[3].to(device)
+        self.normals = batch[3].to(device)
+        self.affine = batch[4].to(device)
 
-        return batch[4].to(device)
+        return batch[5].to(device)
     
 
 class TeethMixedFullDataModule(TeethInstFullDataModule):

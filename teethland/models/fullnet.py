@@ -223,10 +223,10 @@ class FullNet(pl.LightningModule):
         max_probs = torch.zeros_like(instances).float()
         for b in range(probs.batch_size):
             interp = probs.batch(b).interpolate(x, dist_thresh=0.03).F
-            instances = torch.where((interp >= 0.5) & (interp > max_probs), b, instances)
+            instances = torch.where(interp > max_probs, b, instances)
             max_probs = torch.maximum(max_probs, interp)
         instances = x.new_tensor(features=instances)
-        instances = self.trainer.datamodule.process_instances(instances)
+        instances = self.trainer.datamodule.process_instances(instances, max_probs)
 
         if not isinstance(preds, list):
             return instances, labels, None
