@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import open3d
 import pymeshlab
-from sklearn.metrics import ConfusionMatrixDisplay, f1_score
+from sklearn.metrics import ConfusionMatrixDisplay, f1_score, jaccard_score
 from tqdm import tqdm
 
 
@@ -47,17 +47,25 @@ def process_scan(pred_label_dict, gt_label_dict, iou_thresh: float=0.5):
     fns = (np.max(ious, axis=1) < iou_thresh).sum()
     tps = (max(gt_label_dict['instances']) + max(pred_label_dict['instances']) - fps - fns) / 2
 
-    return tps, fps, fns, tooth_dices, gt_labels, pred_labels
+    gt_points = gt_label_dict['labels']
+    pred_points = pred_label_dict['labels']
+
+    return tps, fps, fns, tooth_dices, gt_labels, pred_labels, gt_points, pred_points
 
 
 
 if __name__ == "__main__":
     gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    pred_dir = Path('3dteethseg_2m2')
+    gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
+    pred_dir = Path('mixed_ios')
     TLA, TSA, TIR = [], [], []
     verbose = False
 
-    stats = {'names': [], 'fps': [], 'fns': [], 'tps': [], 'dices': [], 'gt_labels': [], 'pred_labels': []}
+    stats = {
+        'names': [], 'fps': [], 'fns': [], 'tps': [], 'dices': [],
+        'gt_labels': [], 'pred_labels': [],
+        'gt_points': [], 'pred_points': [],
+    }
 
     gt_files = sorted(gt_dir.glob('**/*.json'))
 
@@ -85,7 +93,7 @@ if __name__ == "__main__":
         gt_label_dict['labels'] = labels.tolist()
         gt_label_dict['instances'] = instances.tolist()
 
-        tps, fps, fns, tooth_dices, gt_labels, pred_labels = process_scan(pred_label_dict, gt_label_dict)
+        tps, fps, fns, tooth_dices, gt_labels, pred_labels, gt_points, pred_points = process_scan(pred_label_dict, gt_label_dict)
         # if False:
         if fns:
             fail_files.append(i)
@@ -121,6 +129,8 @@ if __name__ == "__main__":
         stats['dices'].extend(tooth_dices)
         stats['gt_labels'].extend(gt_labels)
         stats['pred_labels'].extend(pred_labels)
+        stats['gt_points'].extend(gt_points)
+        stats['pred_points'].extend(pred_points)
         stats['names'].append(pred_filename.name)
 
     print('Tooth Precision:', sum(stats['tps']) / (sum(stats['tps']) + sum(stats['fps'])))
@@ -132,11 +142,14 @@ if __name__ == "__main__":
     pred_labels = np.array(stats['pred_labels'])
     print('Tooth macro-F1:', f1_score(gt_labels, pred_labels, average='macro'))
 
+    macro_iou = jaccard_score(stats['gt_points'], stats['pred_points'], labels=np.unique(stats['gt_points'])[1:], average='macro')
+    print('macro-IoU:', macro_iou)
+
     with open('failures.txt', 'w') as f:
         for idx in fail_files:
             f.write(pred_files[idx].stem + '\n')
 
-    upper_mask = gt_labels < 30
+    upper_mask = np.isin(gt_labels // 10, np.array([1, 2, 5, 6]))
 
     cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[upper_mask], pred_labels[upper_mask])
     cmd.plot()

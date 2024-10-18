@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import open3d
-from pygco import cut_from_graph
+from gco import cut_general_graph
 import torch
 from torchtyping import TensorType
 
@@ -33,18 +33,20 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
         self,
         instances: PointTensor,
         max_probs: TensorType['N', torch.float32],
+        round_factor: float=100.0,
+        lambda_c: float=20.0,
+        eps: float=1e-4,
     ) -> TensorType['N', torch.bool]:
-        # use minimum cut to derive foreground points
+        """Use minimum cut to derive foreground points."""
         edge_idxs = torch.cat((
             self.triangles[:, [0, 1]],
             self.triangles[:, [0, 2]],
             self.triangles[:, [1, 2]],
-        ))
+        )).int()
         edge_idxs = torch.unique(torch.sort(edge_idxs, dim=-1)[0], dim=0)
 
         # unaries
-        round_factor = 100
-        max_probs[max_probs < 1e-6] = 1e-6
+        max_probs = max_probs.clip(eps, 1 - eps)
         probs = torch.column_stack((1 - max_probs, max_probs))
         unaries = -round_factor * torch.log10(probs)
         unaries = unaries.int()
@@ -53,26 +55,27 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
         pairwise = 1 - torch.eye(2).to(unaries)
 
         # edge weights
-        lambda_c = 30
         cos_theta = torch.einsum('ni,ni->n', self.normals[edge_idxs[:, 0]], self.normals[edge_idxs[:, 1]])
-        cos_theta = cos_theta.clip(-0.9999, 0.9999)
+        cos_theta = cos_theta.clip(-1 + eps, 1 - eps)
         theta = torch.arccos(cos_theta)
         phi = torch.linalg.norm(instances.C[edge_idxs[:, 0]] - instances.C[edge_idxs[:, 1]], dim=-1)
         beta = 1 + cos_theta
-        weights = torch.where(
-            theta > np.pi/2.0,
+        edge_weights = torch.where(
+            theta > np.pi / 2.0,
             -torch.log10(theta / np.pi) * phi,
             -beta * torch.log10(theta / np.pi) * phi
         )
-        weights *= lambda_c * round_factor
-        edge_weights = torch.column_stack((edge_idxs, weights)).to(unaries)
+        edge_weights = (edge_weights * lambda_c * round_factor).int()
 
         # determine graph-cut and select label points
-        foreground = torch.from_numpy(cut_from_graph(
+        foreground = cut_general_graph(
+            edge_idxs.cpu().numpy(),
             edge_weights.cpu().numpy(),
             unaries.cpu().numpy(),
             pairwise.cpu().numpy(),
-        )).to(instances.F)
+            down_weight_factor=1.0,
+        )
+        foreground = torch.from_numpy(foreground).to(instances.F)
 
         return foreground == 1
     
@@ -120,7 +123,6 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
             if labels.shape[0] == 0 or torch.any(labels == -1) or not torch.all(labels[0] == labels):
                 continue
 
-            print('Filled background!')
             out[vertex_idxs[edge_idxs.flatten()]] = labels[0].item()
 
         return out
@@ -159,7 +161,6 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
             if cluster_areas[idx] >= 0.005:
                 continue
 
-            print('Removed foreground!')
             cluster_vertex_idxs = fg_triangles[cluster_idxs == idx].flatten()
             out[vertex_idxs[cluster_vertex_idxs]] = -1
 

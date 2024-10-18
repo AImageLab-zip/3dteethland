@@ -159,20 +159,21 @@ def check_predictions():
     root = Path('/home/mkaailab/Documents/IOS/Katja VOs/transfer_2892173_files_6b1a93dd')
     root = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
     root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    # root = Path('input').resolve()
     # root = Path('/home/mkaailab/Documents/IOS/Maud Wijbrands/root')
-    mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('*.ply')))
+    mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('**/*.ply')))
+    root = Path('3dteethseg').resolve()
     ann_files = sorted(root.glob('**/*er.json'))
     # ann_files = sorted(root.glob('**/*er.json'))
     clean = False
 
     start_idx = 0
     # files = mesh_files[start_idx:]
-    for i, mesh_file in enumerate(mesh_files):
+    for i, ann_file in enumerate(ann_files):
         # mesh_file = sorted(root.glob(f'{ann_file.name.split("_")[0]}/{ann_file.stem}*'))[-1]
         # mesh_file = root.parent / 'cases' / ann_file.stem.split('_')[0] / f'{ann_file.stem}.ply'
         # ann_file = Path(f'dentalnetPr/{mesh_file.stem}.json')
-        ann_file = [f for f in ann_files if f.stem == mesh_file.stem][0]
+        # ann_file = [f for f in ann_files if f.stem == mesh_file.stem][0]
+        mesh_file = [f for f in mesh_files if f.stem == ann_file.stem][0]
         # ann_file = next(root.parent.glob(f'**/{mesh_file.stem}.json'))
         if not ann_file.exists():
             continue
@@ -182,9 +183,9 @@ def check_predictions():
         # if not mesh_file.stem.startswith('G002'):
         #     continue
 
-        if not mesh_file.stem == 'DG27PDD4_upper':
-            ann_file = Path('output/TVSR5QBQ_lower.json')
-            continue
+        # if not mesh_file.stem == '016FSM14_upper':
+        #     ann_file = Path('output/TVSR5QBQ_lower.json')
+        #     continue
 
         # draw_instances(mesh_file, ann_file)
         # draw_proposal(mesh_file, ann_file)
@@ -192,7 +193,7 @@ def check_predictions():
 
         ms = pymeshlab.MeshSet()
         ms.load_new_mesh(str(mesh_file))
-        ms.meshing_remove_duplicate_vertices()
+        # ms.meshing_remove_duplicate_vertices()
         if clean:
             ms.meshing_repair_non_manifold_edges()
             ms.meshing_close_holes(maxholesize=130)  # ~20mm boundary

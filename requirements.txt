@@ -1,9 +1,8 @@
-Cython==3.0.11
 lxml==5.2.2
 numpy<2.0.0
 opencv-python==4.10.0.84
 open3d==0.17.0
-pygco==0.0.16
+gco-wrapper==3.0.9
 pymeshlab==2023.12.post1
 pytest==8.2.2
 pytorch-lightning==2.3.3

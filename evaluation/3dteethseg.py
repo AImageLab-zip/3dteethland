@@ -209,7 +209,7 @@ def process_scan(gt_files, pred_filename):
     gt_label_dict['instances'] = instances.tolist()
     
     ms = pymeshlab.MeshSet()
-    ms.load_new_mesh(str(gt_filename.with_suffix('.obj')))
+    ms.load_new_mesh(str(gt_filename.with_suffix('.ply')))
     vertices = ms.current_mesh().vertex_matrix()
     gt_label_dict['mesh_vertices'] = vertices
 
@@ -223,6 +223,9 @@ if __name__ == "__main__":
     # gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')    
     gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     pred_dir = Path('3dteethseg_2m2')
+    
+    gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
+    pred_dir = Path('mixed_ios')
     TLA, TSA, TIR = [], [], []
 
     gt_files = sorted(gt_dir.glob(f'**/*.json'))
