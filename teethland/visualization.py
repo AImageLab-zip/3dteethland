@@ -157,11 +157,13 @@ def check_predictions():
     root = Path('/mnt/diag/IOS/Brazil/Modelberging')
     root = Path('/home/mkaailab/Documents/CBCT/fusion/stls')
     root = Path('/home/mkaailab/Documents/IOS/Katja VOs/transfer_2892173_files_6b1a93dd')
-    root = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
+    # root = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
     root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     # root = Path('/home/mkaailab/Documents/IOS/Maud Wijbrands/root')
+    # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test')
     mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('**/*.ply')))
-    root = Path('3dteethseg').resolve()
+    root = root.parent / 'last_case'
+    # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     ann_files = sorted(root.glob('**/*er.json'))
     # ann_files = sorted(root.glob('**/*er.json'))
     clean = False
@@ -178,14 +180,14 @@ def check_predictions():
         if not ann_file.exists():
             continue
         # ann_file = mesh_file.with_suffix('.json')
-        print(i, ':', mesh_file.stem, ann_file)
+        # print(i, ':', mesh_file.stem, ann_file)
 
         # if not mesh_file.stem.startswith('G002'):
         #     continue
 
-        # if not mesh_file.stem == '016FSM14_upper':
-        #     ann_file = Path('output/TVSR5QBQ_lower.json')
-        #     continue
+        if not mesh_file.stem == '0LF355FQ_lower':
+            ann_file = Path('output/TVSR5QBQ_lower.json')
+            continue
 
         # draw_instances(mesh_file, ann_file)
         # draw_proposal(mesh_file, ann_file)
@@ -208,7 +210,7 @@ def check_predictions():
 
         labels = np.array(ann['labels'])
         classes = np.full_like(labels, fill_value=-1)
-        instances = np.array(ann['instances'])
+        instances = np.array(ann['instances']) - 1
 
         labels[(71 <= labels) & (labels <= 75)] -= 63
         labels[(31 <= labels) & (labels <= 37)] -= 30
@@ -218,7 +220,20 @@ def check_predictions():
         labels[labels == 48] = 7
 
         _, inverse = np.unique(labels, return_inverse=True)
-        print(np.unique(np.array(ann['labels'])))
+
+        centroids = []
+        for idx in np.unique(instances)[1:]:
+            centroid = vertices[instances == idx].mean(0)
+            centroids.append(centroid)
+        centroids = np.stack(centroids)
+        inst_labels = np.array(ann['labels'])[np.unique(instances, return_index=True)[1][1:]]
+
+        instances = np.array(ann['instances'])*0 - 1
+
+        # if not np.any(np.unique(np.array(ann['labels'])) % 10 == 8):
+        #     continue
+        print(mesh_file)
+        print(inst_labels[np.argsort(centroids[:, 0])])
 
         # labels = np.clip(labels % 10, a_min=0, a_max=7)
         # classes = (instances == 2) - 1

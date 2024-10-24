@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from time import perf_counter
 
 import os, sys
 sys.path.append(os.getcwd())
@@ -38,7 +39,7 @@ def predict(stage: str, mixed: bool, devices: int, config: str):
         in_channels=dm.num_channels,
         num_classes=dm.num_classes,
         **config['model'],
-        out_dir=Path('dentalnetPr' if stage == 'instances' else config['out_dir']),
+        out_dir=Path(config['out_dir']),
     )
 
     logger = TensorBoardLogger(
@@ -55,7 +56,9 @@ def predict(stage: str, mixed: bool, devices: int, config: str):
         logger=logger,
         log_every_n_steps=1,
     )
+    time = perf_counter()
     trainer.predict(model, datamodule=dm)
+    print('Total inference time:', perf_counter() - time)
 
 
 if __name__ == '__main__':

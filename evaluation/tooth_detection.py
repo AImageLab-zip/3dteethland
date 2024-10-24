@@ -57,6 +57,7 @@ def process_scan(pred_label_dict, gt_label_dict, iou_thresh: float=0.5):
 if __name__ == "__main__":
     gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
+    #pred_dir = Path('mixed_ios_standardized')
     pred_dir = Path('mixed_ios')
     TLA, TSA, TIR = [], [], []
     verbose = False
@@ -95,7 +96,7 @@ if __name__ == "__main__":
 
         tps, fps, fns, tooth_dices, gt_labels, pred_labels, gt_points, pred_points = process_scan(pred_label_dict, gt_label_dict)
         # if False:
-        if fns:
+        if fps or fns:
             fail_files.append(i)
             _, counts = np.unique(pred_label_dict['instances'], return_counts=True)
             print(pred_filename, fps, fns, tps, counts)
@@ -152,11 +153,11 @@ if __name__ == "__main__":
     upper_mask = np.isin(gt_labels // 10, np.array([1, 2, 5, 6]))
 
     cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[upper_mask], pred_labels[upper_mask])
-    cmd.plot()
+    cmd.plot(include_values=False)
     plt.show(block=True)
     
     cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[~upper_mask], pred_labels[~upper_mask])
-    cmd.plot()
+    cmd.plot(include_values=False)
     plt.show(block=True)
 
     k = 3

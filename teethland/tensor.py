@@ -683,7 +683,7 @@ class PointTensor:
                 |
                 torch.all(torch.sqrt(sq_dists) < dist_thresh, dim=1)
             )
-            features[~mask] = self.F.amin()
+            features[~mask] = 0.0
         elif self.F.dtype in [torch.int32, torch.int64]:
             weights = weights.float()
             features = torch.full((neighbor_idxs.shape[0],), self.F.amin()).to(self.F)

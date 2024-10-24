@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Tuple
 import teethland
 import torch
 import torch.nn as nn
-from torch_scatter import scatter_mean
+from torch_scatter import scatter_max, scatter_mean
 from torchtyping import TensorType
 
 from teethland import PointTensor
@@ -84,9 +84,18 @@ class MaskedAveragePooling(nn.Module):
             instances.F[instances.F >= 0],
             dim=0
         )
+        
+        max_ids = scatter_max(
+            instances.F,
+            instances.batch_indices,
+            dim=0,
+        )[0]
+        batch_counts = max_ids - torch.cat((torch.full_like(max_ids[:1], -1), max_ids))[:-1]
+
         out = PointTensor(
             coordinates=centroids,
             features=self.mlp(embeddings),
+            batch_counts=batch_counts,
         )
 
         return prototypes, out

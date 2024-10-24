@@ -14,12 +14,42 @@ from teethland.cluster import learned_region_cluster
 import teethland.nn as nn
 
 
-def non_max_suppression(
+def tta_nms(
+    clusters: PointTensor,
+    labels: PointTensor,
+    iou_thresh: float=0.8,
+):
+    clusters1, clusters2 = clusters.batch(0), clusters.batch(1)
+
+    num_instances = labels.batch_counts.sum()
+    ious = torch.zeros(num_instances, num_instances).to(clusters.F.device)
+    for i in range(labels.batch_counts[0]):
+        mask1 = clusters1.F == i
+        for j in range(labels.batch_counts[1]):
+            mask2 = clusters2.F == (labels.batch_counts[0] + j)
+
+            inter = (mask1 & mask2).sum()
+            union = (mask1 | mask2).sum()
+            iou = inter / (union + 1e-6)
+            ious[i, labels.batch_counts[0] + j] = iou
+
+    keep = torch.ones(labels.batch_counts.sum()).bool().to(clusters.F.device)
+    for index, iou in enumerate(ious):
+        if not keep[index]:
+            continue
+
+        condition = iou >= iou_thresh
+        keep = keep & ~condition
+
+    return torch.nonzero(keep)[:, 0]
+
+
+def instance_nms(
     probs: PointTensor,
     point_idxs: TensorType['K', 'N', torch.int64],
     conf_thresh: float=0.5,
     iou_thresh: float=0.35,
-    score_thresh: float=0.75,
+    score_thresh: float=0.7,
 ):
     fg_point_idxs, scores = [], torch.empty(0).to(probs.F)
     for i in range(probs.batch_size):
@@ -38,10 +68,10 @@ def non_max_suppression(
         for j in range(i + 1, probs.batch_size):
             inter = len(fg_point_idxs[i] & fg_point_idxs[j])
             union = len(fg_point_idxs[i] | fg_point_idxs[j])
-            iou = inter / union
+            iou = inter / (union + 1e-6)
             ious[i, j] = iou
 
-    keep = scores >= score_thresh
+    keep = scores[sort_index] >= score_thresh
     for index, iou in enumerate(ious):
         if not keep[index]:
             continue
@@ -64,6 +94,10 @@ class FullNet(pl.LightningModule):
         single_tooth: Dict[str, Any],
         proposal_points: int,
         dbscan_cfg: dict[str, Any],
+        tta: bool,
+        standardize: bool,
+        stage2_iters: int,
+        post_process: bool,
         out_dir: Path,
         **kwargs,
     ) -> None:
@@ -92,9 +126,13 @@ class FullNet(pl.LightningModule):
         )
         self.load_ckpt(self.single_tooth_model, ckpt)
 
-        self.gen_proposals = T.GenerateProposals(proposal_points, max_proposals=32)
+        self.gen_proposals = T.GenerateProposals(proposal_points, max_proposals=40)
+        self.tta = tta
+        self.standardize = standardize
+        self.stage2_iters = stage2_iters
+        self.post_process = post_process
         self.dbscan_cfg = dbscan_cfg
-        self.only_dentalnet = out_dir.name == 'dentalnetPr'
+        self.only_dentalnet = stage2_iters == 0
         self.out_dir = out_dir
         from teethland.data.datasets import TeethLandDataset
         self.landmark_class2label = {
@@ -113,12 +151,21 @@ class FullNet(pl.LightningModule):
     def instances_stage(
         self,
         x: PointTensor,
-    ) -> Tuple[PointTensor, PointTensor]:
+    ) -> Tuple[PointTensor, PointTensor, PointTensor, PointTensor]:
         # downsample
         x_down = x[x.cache['instseg_downsample_idxs']]
+
+        # test-time augmentation by horizontally flipping
+        if self.tta:
+            x_down_flip = x_down.clone()
+            x_down_flip._coordinates[:, 0] *= -1
+            x_down_flip.F[:, 0] *= -1
+            x_down_flip.F[:, 3] *= -1
+
+            x_down = teethland.stack((x_down, x_down_flip))
         
         # forward pass
-        _, (spatial_embeds, seeds, _) = self.instances_model(x_down)
+        _, (spatial_embeds, seeds, features) = self.instances_model(x_down)
 
         # cluster
         offsets = spatial_embeds.new_tensor(features=spatial_embeds.F[:, :3])
@@ -126,6 +173,32 @@ class FullNet(pl.LightningModule):
         clusters = learned_region_cluster(
             offsets, sigmas, seeds,
         )
+        clusters._coordinates[clusters.batch_counts[0]:, 0] *= -1
+
+        if not self.standardize:
+            _, classes = self.identify_model(features, clusters)
+            classes = classes.new_tensor(features=classes.F.argmax(-1))
+            labels = self.trainer.datamodule.teeth_classes_to_labels(classes)
+            labels.cache['rot_matrix'] = torch.eye(4).to(x.F)
+
+            if self.tta:
+                keep_idxs = tta_nms(clusters, labels)
+                clusters.F[~torch.any(clusters.F == keep_idxs[:, None], dim=0)] = -1
+                labels = labels[keep_idxs]
+
+                if self.only_dentalnet:
+                    clusters = clusters.batch(0).new_tensor(
+                        features=torch.maximum(clusters.batch(0).F, clusters.batch(1).F),
+                    )
+                    labels._batch_counts = labels.batch_counts.sum()[None]
+
+                clusters.F = torch.unique(clusters.F, return_inverse=True)[1] - 1
+
+            # interpolate clusters back to original scan
+            instances = clusters.interpolate(teethland.stack([x for _ in labels.batch_counts]))
+
+            return x, instances, features, labels
+
 
         # determine instance centroids
         centroids = scatter_mean(
@@ -165,19 +238,23 @@ class FullNet(pl.LightningModule):
         # interpolate clusters back to original scan
         instances = clusters.interpolate(x_rot)
 
-        return x_rot, instances, labels
+        return x_rot, instances, features, labels
     
     def single_tooth_stage(
         self,
         x: PointTensor,
         instances: PointTensor,
+        features: PointTensor,
         labels: PointTensor,
     ) -> Tuple[PointTensor, PointTensor, Optional[PointTensor]]:
-        instances = instances[x.cache['landmarks_downsample_idxs']]
         x_down = x[x.cache['landmarks_downsample_idxs']]
+        instances = teethland.stack(([
+            instances.batch(i)[x.cache['landmarks_downsample_idxs']]
+            for i in range(instances.batch_size)
+        ]))
         
         # generate proposals based on predicted instances
-        for _ in range(2):
+        for _ in range(self.stage2_iters):
             data_dict = {
                 'points': x_down.C.cpu().numpy(),
                 'instances': instances.F.cpu().numpy(),
@@ -205,9 +282,9 @@ class FullNet(pl.LightningModule):
 
             # apply non-maximum suppression to remove redundant instances
             point_idxs = torch.from_numpy(data_dict['point_idxs']).to(seg.F.device)
-            keep_idxs = non_max_suppression(probs, point_idxs)
-            instances = torch.where(torch.any(instances.F == keep_idxs[:, None], dim=0), instances.F, -1)
-            instances = x_down.new_tensor(features=torch.unique(instances, return_inverse=True)[1] - 1)
+            keep_idxs = instance_nms(probs, point_idxs)
+            instances.F[~torch.any(instances.F == keep_idxs[:, None], dim=0)] = -1
+            instances.F = torch.unique(instances.F, return_inverse=True)[1] - 1
             labels = labels[keep_idxs]
             probs = probs.batch(keep_idxs)
 
@@ -226,7 +303,19 @@ class FullNet(pl.LightningModule):
             instances = torch.where(interp > max_probs, b, instances)
             max_probs = torch.maximum(max_probs, interp)
         instances = x.new_tensor(features=instances)
-        instances = self.trainer.datamodule.process_instances(instances, max_probs)
+        if self.post_process:
+            instances = self.trainer.datamodule.process_instances(instances, max_probs)
+        else:
+            instances.F = torch.where(max_probs >= 0.5, instances.F, -1)
+        
+        _, inverse, counts = torch.unique(instances.F, return_inverse=True, return_counts=True)
+        instances.F[(counts < 16)[inverse]] = -1
+        instances.F = torch.unique(instances.F, return_inverse=True)[1] - 1
+        
+        clusters = instances[x.cache['instseg_downsample_idxs']]
+        _, classes = self.identify_model(features.batch(0), clusters)
+        labels = classes.new_tensor(features=classes.F.argmax(-1))
+        labels.F = self.trainer.datamodule.teeth_classes_to_labels(labels).F
 
         if not isinstance(preds, list):
             return instances, labels, None
@@ -266,14 +355,14 @@ class FullNet(pl.LightningModule):
         x: PointTensor,
     ) -> Tuple[PointTensor, PointTensor, PointTensor]:
         # stage 1
-        x, instances, labels = self.instances_stage(x)
+        x, instances, features, labels = self.instances_stage(x)
         if torch.all(instances.F == -1) or self.only_dentalnet:
             return instances, labels, None
         
         # stage 2
-        instances, labels, landmarks = self.single_tooth_stage(x, instances, labels)
+        instances, labels, landmarks = self.single_tooth_stage(x, instances, features, labels)
 
-        return instances, labels, landmarks
+        return instances.batch(0), labels.batch(0), landmarks
     
     def predict_step(
         self,

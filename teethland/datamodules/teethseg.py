@@ -123,13 +123,22 @@ class TeethSegDataModule(pl.LightningDataModule):
             n_splits=5,
             order=2,
         )
-        train_idxs, val_idxs = list(stratifier.split(
+        splits = list(stratifier.split(
             X=subject_files,
             y=subject_labels,
-        ))[self.fold]
+        ))
+
+        # write folds to storage for documentation
+        for i, (_, fold_idxs) in enumerate(splits):
+            with open(f'fold_{i}.txt', 'w') as f:
+                for subject_idx in fold_idxs:
+                    for fs in subject_files[subject_idx]:
+                        f.write(fs[0].name + '\n')
+        
+        # determine train and validation files of current run
+        train_idxs, val_idxs = splits[self.fold]
         train_files = [f for i in train_idxs for f in subject_files[i]]
         val_files = [f for i in val_idxs for f in subject_files[i]]
-
         if self.include_val_as_train:
             train_files += val_files
 

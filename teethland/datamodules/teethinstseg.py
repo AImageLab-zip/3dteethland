@@ -166,43 +166,18 @@ class TeethInstSegDataModule(TeethSegDataModule):
 
         return R
 
-    def reorder_teeth(
+    def identify_m3(
         self,
         classes: PointTensor,
         side_mask: TensorType['N', torch.bool],
-        dist_thresh_nonmolar: float=0.35,
-        dist_thresh_molar: float=0.5,
     ) -> PointTensor:
-        # fix teeth labels iteratively on one side
-        side_idxs = torch.nonzero(side_mask)[:, 0]
-        side_classes = classes[side_idxs]
-        sort_cols = torch.column_stack((side_classes.F, side_classes.C[:, 1]))
-        _, argsort1 = torch.sort(sort_cols[:, 1], stable=True)
-        _, argsort0 = torch.sort(sort_cols[argsort1, 0], stable=True)
-        argsort = argsort1[argsort0]
-        batch_idxs = side_classes.batch_indices[argsort]
-        coords = side_classes.C[argsort]
-        for i in range(side_idxs.shape[0] - 1):
-            if batch_idxs[i] != batch_idxs[i + 1]:
-                continue
-
-            i_ = side_idxs[argsort[i]]
-            j_ = side_idxs[argsort[i + 1]]
-            if classes.F[i_] < 2:
-                continue
-            
-            dist_thresh = dist_thresh_nonmolar if classes.F[j_] < 5 else dist_thresh_molar
-            dist = torch.sqrt(torch.sum((coords[i, :2] - coords[i + 1, :2])**2))
-            dist_offset = classes.F[j_] - classes.F[i_]
-            if dist / dist_thresh < 1 + dist_offset:
-                continue
-            
-            classes.F[j_] = classes.F[i_] + (dist / dist_thresh).long()
-
         # add third molar if two second molars are present on one side
-        if (classes.F[side_idxs] >= 6).sum() == 2:
-            m3_idx = classes.C[side_idxs][classes.F[side_idxs] >= 6, 1].argmax()
-            classes.F[side_idxs[torch.nonzero(classes.F[side_idxs] >= 6)[m3_idx, 0]]] = 7
+        for batch_idx in range(classes.batch_size):
+            side_idxs = torch.nonzero((classes.batch_indices == batch_idx) & side_mask)[:, 0]
+            is_m2 = (classes.F[side_idxs] % 8) == 6
+            if is_m2.sum() == 2:
+                m3_idx = classes.C[side_idxs][is_m2, 1].argmax()
+                classes.F[side_idxs[torch.nonzero(is_m2)[m3_idx, 0]]] += 1
 
         return classes
 
@@ -233,8 +208,8 @@ class TeethInstSegDataModule(TeethSegDataModule):
         labels.F[labels.F >= 7] += 1
 
         # fix duplicate classes on one side, introducing third molars
-        labels = self.reorder_teeth(labels, right_mask)
-        labels = self.reorder_teeth(labels, ~right_mask)
+        labels = self.identify_m3(labels, right_mask)
+        labels = self.identify_m3(labels, ~right_mask)
 
         # translate index label to FDI label
         if self.filter == 'lower':
@@ -243,8 +218,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
             if self.distinguish_upper_lower:
                 labels.F += 12 * (labels.F >= 8)
             else:
-                labels.F = torch.clip(labels.F, 0, 7)
-                labels.F += 20 * self.is_lower[classes.batch_indices]
+                labels.F += 20 * self.is_lower[0]
                 
             labels.F += 11 + 10 * right_mask
         

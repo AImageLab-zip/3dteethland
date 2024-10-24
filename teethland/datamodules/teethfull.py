@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -27,7 +28,6 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
             T.UniformDensityDownsample(uniform_density_voxel_size[0]),
             self.default_transforms,
         )
-
 
     def _min_graph_cut(
         self,
@@ -82,6 +82,8 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
     def _fill_background_triangles(
         self,
         instances: PointTensor,
+        max_probs: TensorType['N', torch.float32],
+        score_thresh: float=0.4,
     ) -> TensorType['N', torch.int64]:
         # determine mesh of background triangles
         bg_mask = instances.F == -1
@@ -115,54 +117,40 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
                 bg_triangles[cluster_idxs == idx][:, [1, 2]],
             ))
             unique, counts = torch.unique(torch.sort(edge_idxs, dim=-1)[0], dim=0, return_counts=True)
+            
             border_vertex_idxs = unique[counts == 1].flatten()
-            border_vertex_idxs = torch.unique(vertex_idxs[border_vertex_idxs])
-            
+            border_vertex_idxs = torch.unique(vertex_idxs[border_vertex_idxs])            
             labels = instances.F[border_vertex_idxs]
-            
-            if labels.shape[0] == 0 or torch.any(labels == -1) or not torch.all(labels[0] == labels):
+
+            middle_vertex_idxs = unique[counts == 2].flatten()
+            middle_vertex_idxs = torch.unique(vertex_idxs[middle_vertex_idxs])            
+            probs = max_probs[middle_vertex_idxs]
+
+            if (
+                labels.shape[0] == 0
+                or torch.any(labels == -1)
+                or not torch.all(labels[0] == labels)
+                or probs.mean() < score_thresh
+            ):
                 continue
 
+            print('bg', (cluster_idxs == idx).sum(), probs.mean())
             out[vertex_idxs[edge_idxs.flatten()]] = labels[0].item()
 
         return out
     
-    def _remove_foreground_triangles(
+    def _remove_small_instances(
         self,
         instances: PointTensor,
     ) -> TensorType['N', torch.int64]:
-        # determine mesh of tooth triangles
-        fg_mask = instances.F >= 0
-
-        fg_triangles = self.triangles[torch.any(fg_mask[self.triangles], dim=-1)]
-        
-        vertex_mask = torch.zeros_like(fg_mask)
-        vertex_mask[fg_triangles.flatten()] = True
-        fg_vertices = instances.C[vertex_mask]
-        
-        vertex_map = torch.full((instances.C.shape[0],), -1).to(instances.F)
-        vertex_map[vertex_mask] = torch.arange(fg_vertices.shape[0]).to(instances.F)
-        fg_triangles = vertex_map[fg_triangles]
-
-        fg_mesh = open3d.geometry.TriangleMesh(
-            open3d.utility.Vector3dVector(fg_vertices.cpu().numpy()),
-            open3d.utility.Vector3iVector(fg_triangles.cpu().numpy()),
-        )
-
-        # cluster connected triangles of teeth
-        cluster_idxs, _, cluster_areas = fg_mesh.cluster_connected_triangles()
-        cluster_idxs = torch.from_numpy(np.asarray(cluster_idxs)).to(instances.F)
-        cluster_areas = torch.from_numpy(np.asarray(cluster_areas)).to(instances.C)
-
-        # remove small connected components
         out = instances.F.clone()
-        vertex_idxs = torch.nonzero(vertex_mask)[:, 0]
-        for idx in torch.unique(cluster_idxs):
-            if cluster_areas[idx] >= 0.005:
-                continue
 
-            cluster_vertex_idxs = fg_triangles[cluster_idxs == idx].flatten()
-            out[vertex_idxs[cluster_vertex_idxs]] = -1
+        # remove small instances
+        _, counts = torch.unique(instances.F, return_counts=True)
+        out[(counts < 100)[instances.F + 1]] = -1
+
+        if torch.amin(counts) < 100:
+            print('end', counts.amin())
 
         return out
 
@@ -176,12 +164,8 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
         instances.F = torch.where(foreground, instances.F, -1)
 
         # fill surrounded background patches and remove small foreground patches
-        instances.F = self._fill_background_triangles(instances)
-        instances.F = self._remove_foreground_triangles(instances)
-
-        # remove small instances
-        _, counts = torch.unique(instances.F, return_counts=True)
-        instances.F[(counts < 100)[instances.F + 1]] = -1
+        instances.F = self._fill_background_triangles(instances, max_probs)
+        instances.F = self._remove_small_instances(instances)
                 
         return instances
 
@@ -262,7 +246,10 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
         if stage is None or stage == 'predict':
             files = self._files('fit', exclude=[])
             print('Total number of files:', len(files))
-            # train_files, val_files = self._split(files)
+            if Path(self.fold).is_file:
+                with open(self.fold, 'r') as f:
+                    fold_files = [l.strip() for l in f.readlines()]
+                files = [fs for fs in files if fs[0].name in fold_files]
             self.pred_dataset = TeethSegDataset(
                 stage='predict',
                 root=self.root,
@@ -353,10 +340,14 @@ class TeethMixedFullDataModule(TeethInstFullDataModule):
             right = classes.batch(batch_idx).C[:, 0] < zero_x
             right_mask = torch.cat((right_mask, right))
 
-        # do reordering without primary/permanent 
+        # make room for third molars
         labels = classes.clone()
         primary_mask = labels.F >= 7
         labels.F = labels.F % 7
+
+        # fix duplicate classes on one side, introducing third molars
+        labels = self.identify_m3(labels, right_mask)
+        labels = self.identify_m3(labels, ~right_mask)
         
         # translate index label to FDI label
         if self.filter == 'lower':
@@ -366,7 +357,7 @@ class TeethMixedFullDataModule(TeethInstFullDataModule):
                 raise NotImplementedError()
             else:
                 labels.F += 40 * primary_mask * (labels.F < 5)
-                labels.F += 20 * self.is_lower[labels.batch_indices]
+                labels.F += 20 * self.is_lower[0]
                 
             labels.F += 11 + 10 * right_mask
         

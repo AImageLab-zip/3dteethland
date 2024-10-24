@@ -310,7 +310,10 @@ class PoseNormalize:
             ]) @ R
 
         # rotate 180 degrees around z-axis if points are flipped
-        if (points[(points @ R.T)[:, 0] > 1] @ R.T).mean(0)[1] < 0:
+        points_rot = points @ R.T
+        is_middle = np.abs(points_rot[:, 0]) < np.quantile(np.abs(points_rot[:, 0]), 0.2)
+        is_high = points_rot[:, 2] > np.quantile(points_rot[:, 2], 0.8)
+        if points_rot[is_middle & is_high].mean(0)[1] > 0:
             R = np.array([
                 [-1, 0, 0],
                 [0, -1, 0],
@@ -826,7 +829,6 @@ class GenerateProposals:
         dists = np.linalg.norm(points[None] - centroids[:, None], axis=-1)
         point_idxs = np.argsort(dists, axis=1)[:, :self.proposal_points]
         fg_masks = data_dict['instances'][point_idxs] == instance_idxs[:, None]
-        assert np.all(np.any(fg_masks, 1))
 
         data_dict['points'] = points[point_idxs]
         data_dict['normals'] = data_dict['normals'][point_idxs]

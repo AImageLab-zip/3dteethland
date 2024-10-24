@@ -1,3 +1,4 @@
+from collections import defaultdict
 from functools import partial
 import math
 import multiprocessing as mp
@@ -207,52 +208,92 @@ def process_scan(gt_files, pred_filename):
     instances[(counts < 100)[instances]] = 0
     gt_label_dict['labels'] = labels.tolist()
     gt_label_dict['instances'] = instances.tolist()
+
+    if 'lower_upper' in gt_filename.as_posix():
+        # gt_label_dict['labels'] = (np.array(gt_label_dict['labels']) % 40).tolist()
+        pred_labels = np.array(pred_label_dict['labels'])
+        pred_labels[pred_labels > 50] -= 40
+        pred_label_dict['labels'] = pred_labels.tolist()
     
     ms = pymeshlab.MeshSet()
-    ms.load_new_mesh(str(gt_filename.with_suffix('.ply')))
+    try:
+        ms.load_new_mesh(str(gt_filename.with_suffix('.obj')))
+    except Exception:
+        ms.load_new_mesh(str(gt_filename.with_suffix('.ply')))
     vertices = ms.current_mesh().vertex_matrix()
     gt_label_dict['mesh_vertices'] = vertices
 
     jaw_TLA, jaw_TSA, jaw_TIR = calculate_metrics(gt_label_dict, pred_label_dict)
 
-    return math.exp(-jaw_TLA), jaw_TSA, jaw_TIR
+    return pred_filename, math.exp(-jaw_TLA), jaw_TSA, jaw_TIR
 
 
 
 if __name__ == "__main__":
     # gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')    
     gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    pred_dir = Path('3dteethseg_2m2')
+    # pred_dir = Path('3dteethseg')
     
     gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
-    pred_dir = Path('mixed_ios')
-    TLA, TSA, TIR = [], [], []
 
-    gt_files = sorted(gt_dir.glob(f'**/*.json'))
-    pred_files = sorted(pred_dir.glob('*'))
+    all_scores = defaultdict(dict)
+    for pred_dir in [
+        # Path('mixed_3dteethseg_3')
+        Path('mixed_ios_stage1'),
+        Path('mixed_ios_stage1tta'),
+        Path('mixed_ios_stage2tta'),
+        # Path('mixed_ios_standardized'),
+        # Path('mixed_ios_stage2'),
+        Path('mixed_ios_stage2twice'),
+        Path('mixed_ios'),
+        # Path('3dteethseg_stage2tta'),
+        # Path('3dteethseg_standardized'),
+        # Path('3dteethseg_stage2'),
+        # Path('3dteethseg_stage2twice'),
+        # Path('3dteethseg'),
+    ]:
+        scans, TLA, TSA, TIR = [], [], [], []
 
-    with mp.Pool(16) as p:
-        i = p.imap_unordered(partial(process_scan, gt_files), pred_files)
-        for tla, tsa, tir in tqdm(i, total=len(pred_files)):
-            
-            TLA.append(tla)
-            TSA.append(tsa)
-            TIR.append(tir)
+        gt_files = sorted(gt_dir.glob(f'**/*.json'))
+        pred_files = sorted(pred_dir.glob('*'))
 
-    score = (np.mean(TSA) + np.mean(TLA) + np.mean(TIR))/3
-    print("TSA : {} +- {}".format(np.mean(TSA), np.std(TSA)))
-    print("TLA : {} +- {}".format(np.mean(TLA), np.std(TLA)))
-    print("TIR : {} +- {}".format(np.mean(TIR), np.std(TIR)))
-    print(" score : ", score)
+        with mp.Pool(16) as p:
+            i = p.imap_unordered(partial(process_scan, gt_files), pred_files)
+            for scan, tla, tsa, tir in tqdm(i, total=len(pred_files)):
+                
+                scans.append(scan)
+                TLA.append(tla)
+                TSA.append(tsa)
+                TIR.append(tir)
+                all_scores[scan.stem][pred_dir.name] = (tla + tsa + tir) / 3
 
-    # export metrics to /output/metrics.json
-    score_dict = {
-        "global": score,
-        "TSA": np.mean(TSA),
-        "TLA": np.mean(TLA),
-        "TIR": np.mean(TIR)
-    }
+        score = (np.mean(TSA) + np.mean(TLA) + np.mean(TIR))/3
+        print("TSA : {} +- {}".format(np.mean(TSA), np.std(TSA)))
+        print("TLA : {} +- {}".format(np.mean(TLA), np.std(TLA)))
+        print("TIR : {} +- {}".format(np.mean(TIR), np.std(TIR)))
+        print(" score : ", score)
 
-    with open('/output/metrics.json', 'w') as fp:
-        json.dump(score_dict, fp)
+        for idx in np.argsort(scans):
+            print(scans[idx], TIR[idx])
+
+        # export metrics to /output/metrics.json
+        score_dict = {
+            "global": score,
+            "TSA": np.mean(TSA),
+            "TLA": np.mean(TLA),
+            "TIR": np.mean(TIR)
+        }
+
+    scan_diffs = {}
+    for scan, score_dict in all_scores.items():
+        scores = [score_dict[k] for k in ['mixed_ios_stage1', 'mixed_ios_stage1tta', 'mixed_ios_stage2tta', 'mixed_ios_stage2twice', 'mixed_ios']]
+        # scores = [score_dict[k] for k in ['3dteethseg_stage1', '3dteethseg_standardized', '3dteethseg_stage2', '3dteethseg_stage2twice', '3dteethseg']]
+        scores = np.array(scores)
+        if np.all((scores[1:] - scores[:-1]) > 0):
+            diffs = (scores[1:] - scores[:-1]).sum()
+            scan_diffs[scan] = diffs
+
+    idxs = np.argsort(list(scan_diffs.values()))
+    for idx in idxs:
+        print(list(scan_diffs.keys())[idx])
 
