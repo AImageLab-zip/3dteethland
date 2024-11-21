@@ -65,10 +65,20 @@ class MaskedAveragePooling(nn.Module):
         self,
         features: PointTensor,
         instances: PointTensor,
-    ) -> Tuple[PointTensor, TensorType['B', 'C', torch.float32]]:
+    ) -> Tuple[PointTensor, PointTensor]:
+        ids = instances.F.unique()
+        if ids.shape[0] == 1:
+            out = PointTensor(
+                coordinates=features.C[:0],
+                features=features.F[:0],
+                batch_counts=0 * features.batch_counts,
+            )
+
+            return out, out
+
         # apply instance masks to get prototypes
         prototypes, embeddings = [], []
-        for id in instances.F.unique()[1:]:
+        for id in ids[1:]:
             prototype = features[instances.F == id]
 
             prototypes.append(prototype)

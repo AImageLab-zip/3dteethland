@@ -317,9 +317,11 @@ class FullNet(pl.LightningModule):
         labels = classes.new_tensor(features=classes.F.argmax(-1))
         labels.F = self.trainer.datamodule.teeth_classes_to_labels(labels).F
 
-        if not isinstance(preds, list):
+        # if not isinstance(preds, list):
+        if True:
             return instances, labels, None
         
+        print('start landmarks')
         # apply NMS selection
         points_offsets = preds[1:]
         points_offsets = [offsets.batch(keep_idxs) for offsets in points_offsets]
@@ -380,7 +382,10 @@ class FullNet(pl.LightningModule):
         self.save_landmarks(landmarks)
 
     def save_segmentation(self, instances: PointTensor, labels: PointTensor):
-        labels = torch.where(instances.F >= 0, labels.F[instances.F], 0)
+        if torch.any(instances.F >= 0):
+            labels = torch.where(instances.F >= 0, labels.F[instances.F], 0)
+        else:
+            labels = torch.zeros_like(instances.F)
         instances = torch.unique(instances.F, return_inverse=True)[1] - 1
 
         out_dict = {

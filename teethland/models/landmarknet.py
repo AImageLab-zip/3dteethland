@@ -134,35 +134,43 @@ class LandmarkNet(pl.LightningModule):
         self.dice((seg.F[:, 0] >= 0).long(), (labels.F >= 0).long())
 
 
-        # process point-level landmarks
-        landmarks_list = []
-        for i, offsets in enumerate([mesial_distal, facial, outer, inner, cusps]):
-            kpt_mask = offsets.F[:, 0] < 0.08
-            coords = x.C + offsets.F[:, 1:]
-            pred_landmarks = PointTensor(
-                coordinates=coords[kpt_mask],
-                batch_counts=torch.bincount(
-                    x.batch_indices[kpt_mask],
-                    minlength=x.batch_size,
-                ),
-            )
-            pred_landmarks = pred_landmarks.cluster(**self.dbscan_cfg)
-            pred_landmarks = pred_landmarks.new_tensor(
-                features=torch.full((pred_landmarks.C.shape[0],), i).to(coords.device),
-            )
-            landmarks_list.append(pred_landmarks)
-        pred_landmarks = teethland.cat(landmarks_list)
-
-        landmarks = landmarks.new_tensor(features=torch.clip(landmarks.F - 1, 0, 4))
-        self.landmark_map.update(pred_landmarks, landmarks)
-
         log_dict = {
             **loss,
             'loss/val': sum([v for v in loss.values()]),
             'dice/val': self.dice,
-            'map/val': self.landmark_map,
         }
+
+        # if self.trainer.current_epoch == 0:
         self.log_dict(log_dict, batch_size=x.batch_size, sync_dist=True)
+        return
+
+        # process point-level landmarks
+        # landmarks_list = []
+        # for i, offsets in enumerate([mesial_distal, facial, outer, inner, cusps]):
+        #     kpt_mask = offsets.F[:, 0] < 0.12
+        #     coords = x.C + offsets.F[:, 1:]
+        #     dists = torch.clip(offsets.F[:, 0], 0, 0.12)
+        #     weights = (0.12 - dists) / 0.12
+        #     landmarks = PointTensor(
+        #         coordinates=coords[kpt_mask],
+        #         features=weights[kpt_mask],
+        #         batch_counts=torch.bincount(
+        #             input=x.batch_indices[kpt_mask],
+        #             minlength=x.batch_size,
+        #         ),
+        #     )
+        #     landmarks = landmarks.cluster(**self.dbscan_cfg)
+        #     landmarks = landmarks.new_tensor(features=torch.column_stack((landmarks.F, 
+        #         torch.full((landmarks.C.shape[0],), i).to(coords.device),
+        #     )))
+        #     landmarks_list.append(landmarks)
+        # pred_landmarks = teethland.cat(landmarks_list)
+
+        # landmarks = batch[1][0].new_tensor(features=torch.clip(batch[1][0].F - 1, 0, 4))
+        # self.landmark_map.update(pred_landmarks, landmarks)
+        
+        # log_dict['landmark_map/val'] = self.landmark_map
+        # self.log_dict(log_dict, batch_size=x.batch_size, sync_dist=True)
 
     def configure_optimizers(self) -> Tuple[
         List[torch.optim.Optimizer],

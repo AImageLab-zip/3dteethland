@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 import re
-from typing import List, Optional, Tuple, Union
+from typing import List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import pytorch_lightning as pl
@@ -29,6 +29,7 @@ class TeethSegDataModule(pl.LightningDataModule):
         pin_memory: bool,
         persistent_workers: bool,
         seed: int,
+        sampler: Literal['default', 'balanced'],
         **kwargs,
     ):        
         super().__init__()
@@ -45,6 +46,7 @@ class TeethSegDataModule(pl.LightningDataModule):
         self.pin_memory = pin_memory
         self.persistent_workers = persistent_workers
         self.seed =  seed
+        self.sampler = sampler
 
     def _files(
         self,
@@ -94,6 +96,15 @@ class TeethSegDataModule(pl.LightningDataModule):
     ) -> Tuple[List[Tuple[Path, Path, '...']]]:
         if len(files) <= 1:
             return files, []
+        
+        # keep the split of a previous stage or run, if validation fold is specified
+        if isinstance(self.fold, str):
+            with open(self.fold, 'r') as f:
+                val_mesh_files = [l.strip() for l in f.readlines() if l.strip()]
+
+            train_files = [fs for fs in files if fs[0].name not in val_mesh_files]
+            val_files = [fs for fs in files if fs[0].name in val_mesh_files]
+            return train_files, val_files
 
         # determine classes and mesh and annotation files of each subject
         subject_idxs = {}
@@ -162,7 +173,10 @@ class TeethSegDataModule(pl.LightningDataModule):
         )
 
     def train_dataloader(self) -> DataLoader:
-        sampler = InstanceBalancedSampler(self.train_dataset)
+        if self.sampler == 'balanced':
+            sampler = InstanceBalancedSampler(self.train_dataset)
+        else:
+            sampler = None
         return self._dataloader(self.train_dataset, sampler=sampler)
 
     def val_dataloader(self) -> DataLoader:

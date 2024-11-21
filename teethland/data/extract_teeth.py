@@ -9,14 +9,14 @@ from tqdm import tqdm
 
 
 if __name__ == '__main__':
-    root = Path('/home/mkaailab/Documents/CBCT/fusion/stls')
+    root = Path('/home/mkaailab/Documents/CBCT/fusion/complete_cadavers/IOS scans')
     verbose = False
 
-    out_dir = root.parent / 'IOS teeth'
+    out_dir = root.parent / 'IOS Teeth'
     out_dir.mkdir(exist_ok=True)
 
     ms = pymeshlab.MeshSet()
-    for mesh_file in tqdm(list(root.glob('*.stl'))):
+    for mesh_file in tqdm(list(root.glob('**/*.stl'))):
         patient_id = mesh_file.name.split('_')[0]
         
         patient_dir = out_dir / patient_id

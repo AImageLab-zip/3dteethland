@@ -175,9 +175,12 @@ class TeethInstSegDataModule(TeethSegDataModule):
         for batch_idx in range(classes.batch_size):
             side_idxs = torch.nonzero((classes.batch_indices == batch_idx) & side_mask)[:, 0]
             is_m2 = (classes.F[side_idxs] % 8) == 6
-            if is_m2.sum() == 2:
-                m3_idx = classes.C[side_idxs][is_m2, 1].argmax()
-                classes.F[side_idxs[torch.nonzero(is_m2)[m3_idx, 0]]] += 1
+
+            if is_m2.sum() < 2:
+                continue
+            
+            m3_idx = classes.C[side_idxs][is_m2, 1].argmax()
+            classes.F[side_idxs[torch.nonzero(is_m2)[m3_idx, 0]]] += 1
 
         return classes
 

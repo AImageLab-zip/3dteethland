@@ -62,7 +62,7 @@ class TeethLandDataModule(TeethBinSegDataModule):
         if stage is None or stage == 'fit':
             files = self._files('fit')
             print('Total number of files:', len(files))
-            train_files, val_files = self._split(files)
+            train_files, val_files = self._split(files)           
                                       
             train_transforms = T.Compose(
                 T.RandomAxisFlip(rng=rng),
