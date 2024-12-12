@@ -90,6 +90,7 @@ class FullNet(pl.LightningModule):
 
     def __init__(
         self,
+        align: Dict[str, Any],
         instseg: Dict[str, Any],
         single_tooth: Dict[str, Any],
         proposal_points: int,
@@ -102,6 +103,18 @@ class FullNet(pl.LightningModule):
         **kwargs,
     ) -> None:
         super().__init__()
+
+        # align stage
+        ckpt = align.pop('checkpoint_path')
+        self.align_backbone = nn.StratifiedTransformer(
+            in_channels=kwargs['in_channels'],
+            out_channels=None,
+            **instseg,
+        )
+        self.load_ckpt(self.align_backbone, ckpt)
+
+        self.align_head = nn.MLP(self.align_backbone.enc_channels, 256, 9)
+        self.load_ckpt(self.align_head, ckpt)
         
         # instance segmentation stage
         ckpt = instseg.pop('checkpoint_path')
@@ -148,10 +161,69 @@ class FullNet(pl.LightningModule):
             model.load_state_dict(ckpt)
             model.requires_grad_(False)
 
+    def align_stage(
+        self,
+        x: PointTensor,
+    ) -> Tuple[PointTensor, TensorType[4, 4, torch.float32]]:
+        # downsample
+        x_down = x[x.cache['instseg_downsample_idxs']]
+        
+        encoding = self.align_backbone(x_down)
+        embeddings = scatter_mean(encoding.F, encoding.batch_indices, dim=0)
+        embeddings = PointTensor(
+            coordinates=torch.zeros(x.batch_size, 3).to(x.C),
+            features=embeddings,
+        )
+        preds = self.align_head(embeddings)
+
+        dir_up = preds.F[:, :3] / torch.linalg.norm(preds.F[:, :3], dim=-1, keepdim=True)
+        dir_fwd = preds.F[:, 3:6] / torch.linalg.norm(preds.F[:, 3:6], dim=-1, keepdim=True)
+        trans = preds.F[:, 6:]
+
+        # make two vectors orthogonal
+        dots = torch.einsum('bi,bi->b', dir_up, dir_fwd)
+        dir_up -= dots[:, None] * dir_fwd
+
+        # determine non-reflecting rotation matrix to standard basis
+        pred_right = torch.cross(dir_fwd, dir_up, dim=-1)
+        R = torch.stack((pred_right, dir_fwd, dir_up))[:, 0]
+        if torch.linalg.det(R) < 0:
+            print('Determinant < 0')
+            R = torch.tensor([
+                [-1, 0, 0],
+                [0, 1, 0],
+                [0, 0, 1],
+            ]).to(R) @ R
+
+        # determine rotation matrix in 3DTeethSeg basis
+        R = torch.tensor([
+            [-1, 0, 0],
+            [0, -1, 0],
+            [0, 0, 1],
+        ]).to(R) @ R
+
+        # apply translation and determine affine matrix
+        T = torch.eye(4).to(R)
+        T[:3, :3] = R
+        T[:3, 3] = -trans @ R.T
+
+        # apply transformation to input
+        coords_homo = torch.column_stack((x.C, torch.ones_like(x.C[:, 0])))
+        out = x.new_tensor(
+            coordinates=(coords_homo @ T.T)[:, :3],
+            features=torch.column_stack((
+                (coords_homo @ T.T)[:, :3],
+                x.F[:, 3:6] @ T[:3, :3].T,
+            )),
+        )
+        out.cache = x.cache
+
+        return out, T
+
     def instances_stage(
         self,
         x: PointTensor,
-    ) -> Tuple[PointTensor, PointTensor, PointTensor, PointTensor]:
+    ) -> Tuple[PointTensor, PointTensor, PointTensor, PointTensor, TensorType[4, 4, torch.float32]]:
         # downsample
         x_down = x[x.cache['instseg_downsample_idxs']]
 
@@ -177,9 +249,8 @@ class FullNet(pl.LightningModule):
 
         if not self.standardize:
             _, classes = self.identify_model(features, clusters)
-            classes = classes.new_tensor(features=classes.F.argmax(-1))
+            # classes = classes.new_tensor(features=classes.F.argmax(-1))
             labels = self.trainer.datamodule.teeth_classes_to_labels(classes)
-            labels.cache['rot_matrix'] = torch.eye(4).to(x.F)
 
             if self.tta:
                 keep_idxs = tta_nms(clusters, labels)
@@ -197,7 +268,7 @@ class FullNet(pl.LightningModule):
             # interpolate clusters back to original scan
             instances = clusters.interpolate(teethland.stack([x for _ in labels.batch_counts]))
 
-            return x, instances, features, labels
+            return x, instances, features, labels, torch.eye(4).to(x.F)
 
 
         # determine instance centroids
@@ -231,14 +302,13 @@ class FullNet(pl.LightningModule):
 
         # determine FDI number on rotated scan
         _, classes = self.identify_model(features, clusters)
-        classes = classes.new_tensor(features=classes.F.argmax(-1))
+        # classes = classes.new_tensor(features=classes.F.argmax(-1))
         labels = self.trainer.datamodule.teeth_classes_to_labels(classes)
-        labels.cache['rot_matrix'] = affine
 
         # interpolate clusters back to original scan
         instances = clusters.interpolate(x_rot)
 
-        return x_rot, instances, features, labels
+        return x_rot, instances, features, labels, affine
     
     def single_tooth_stage(
         self,
@@ -246,6 +316,7 @@ class FullNet(pl.LightningModule):
         instances: PointTensor,
         features: PointTensor,
         labels: PointTensor,
+        affine: TensorType[4, 4, torch.float32],
     ) -> Tuple[PointTensor, PointTensor, Optional[PointTensor]]:
         x_down = x[x.cache['landmarks_downsample_idxs']]
         instances = teethland.stack(([
@@ -314,15 +385,15 @@ class FullNet(pl.LightningModule):
         
         clusters = instances[x.cache['instseg_downsample_idxs']]
         _, classes = self.identify_model(features.batch(0), clusters)
-        labels = classes.new_tensor(features=classes.F.argmax(-1))
-        labels.F = self.trainer.datamodule.teeth_classes_to_labels(labels).F
+        # labels = classes.new_tensor(features=classes.F.argmax(-1))
+        labels.F = self.trainer.datamodule.teeth_classes_to_labels(classes).F
 
-        # if not isinstance(preds, list):
-        if True:
+        if not isinstance(preds, list):
             return instances, labels, None
         
         print('start landmarks')
         # apply NMS selection
+        proposals = proposals.batch(keep_idxs)
         points_offsets = preds[1:]
         points_offsets = [offsets.batch(keep_idxs) for offsets in points_offsets]
 
@@ -348,7 +419,7 @@ class FullNet(pl.LightningModule):
             landmarks_list.append(landmarks)
         landmarks = teethland.cat(landmarks_list)
 
-        landmarks = self.trainer.datamodule.process_landmarks(labels, landmarks)
+        landmarks = self.trainer.datamodule.process_landmarks(labels, affine, landmarks)
 
         return instances, labels, landmarks
 
@@ -357,12 +428,15 @@ class FullNet(pl.LightningModule):
         x: PointTensor,
     ) -> Tuple[PointTensor, PointTensor, PointTensor]:
         # stage 1
-        x, instances, features, labels = self.instances_stage(x)
+        x, affine = self.align_stage(x)
+
+        # stage 2
+        x, instances, features, labels, affine = self.instances_stage(x)
         if torch.all(instances.F == -1) or self.only_dentalnet:
             return instances, labels, None
         
-        # stage 2
-        instances, labels, landmarks = self.single_tooth_stage(x, instances, features, labels)
+        # stage 3
+        instances, labels, landmarks = self.single_tooth_stage(x, instances, features, labels, affine)
 
         return instances.batch(0), labels.batch(0), landmarks
     

@@ -159,8 +159,9 @@ def check_predictions():
     root = Path('/home/mkaailab/Documents/IOS/Katja VOs/transfer_2892173_files_6b1a93dd')
     # root = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
     root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    root = Path('/home/mkaailab/Documents/IOS/partials/root_partial')
-    root = Path('/home/mkaailab/Documents/CBCT/fusion/complete_cadavers/IOS scans')
+    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/root_full')
+    # root = Path('/home/mkaailab/Documents/CBCT/fusion/complete_cadavers/IOS scans')
+    # root = Path('/home/mkaailab/Documents/IOS/Katja Vos/AKMA')
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test')
     mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('**/*.ply')) + list(root.glob('**/*.stl')))
     # root = root.parent / 'last_case'
@@ -183,7 +184,7 @@ def check_predictions():
         # ann_file = mesh_file.with_suffix('.json')
         # print(i, ':', mesh_file.stem, ann_file)
 
-        # if not mesh_file.stem.startswith('G002'):
+        # if not mesh_file.stem.startswith('202376_'):
         #     continue
 
         # if not mesh_file.stem == '20221229_lower':
@@ -252,11 +253,13 @@ def check_predictions():
 
 def check_landmarks():
     seg_root = Path('/home/mkaailab/Documents/IOS/3dteethland/data/unseen')
+    seg_root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     # seg_root = Path('input')
     # seg_root = Path('/home/mkaailab/Documents/IOS/Brazil/test')
     # seg_root = Path('/home/mkaailab/Documents/CBCT/fusion/stls')
     landmarks_root = Path('/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train')
-    landmarks_root = seg_root
+    landmarks_root = Path('/home/mkaailab/Documents/IOS/3dteethland/code/preds/3dteethland')
+    # landmarks_root = seg_root
 
     for landmarks_file in sorted(landmarks_root.glob('**/*__kpt.json')):
         stem = landmarks_file.stem.split('__')[0]
@@ -295,7 +298,7 @@ def check_landmarks():
         landmark_classes = np.array([landmark['class'] for landmark in landmarks])
         _, landmark_classes = np.unique(landmark_classes, return_inverse=True)
 
-        mask = landmark_scores >= 0.7
+        mask = landmark_scores >= 0.3
         landmarks = np.column_stack((landmark_coords[mask], landmark_classes[mask]))
         
         balls = []
@@ -306,7 +309,7 @@ def check_landmarks():
             ball.compute_vertex_normals()
             balls.append(ball)
 
-        open3d.visualization.draw_geometries([mesh])
+        open3d.visualization.draw_geometries([*balls, mesh])
 
 
 

@@ -10,10 +10,11 @@ from pytorch_lightning.loggers import TensorBoardLogger
 import yaml
 
 from teethland.datamodules import (
+    TeethAlignDataModule,
     TeethInstFullDataModule,
     TeethMixedFullDataModule,
 )
-from teethland.models import FullNet
+from teethland.models import AlignNet, FullNet
 
 
 def predict(stage: str, mixed: bool, devices: int, config: str):
@@ -23,7 +24,12 @@ def predict(stage: str, mixed: bool, devices: int, config: str):
     pl.seed_everything(config['seed'], workers=True)
 
     config['datamodule']['batch_size'] = 1
-    if mixed:
+    if stage == 'align':
+        dm = TeethAlignDataModule(
+            seed=config['seed'], **config['datamodule'],
+            out_dir=Path(config['out_dir']),
+        )
+    elif mixed:
         dm = TeethMixedFullDataModule(
             seed=config['seed'], **config['datamodule'],
         )
@@ -35,12 +41,19 @@ def predict(stage: str, mixed: bool, devices: int, config: str):
     
     single_tooth = 'binseg' if stage == 'highres' else 'landmarks'
     config['model']['single_tooth'] = config['model'][single_tooth]
-    model = FullNet(
-        in_channels=dm.num_channels,
-        num_classes=dm.num_classes,
-        **config['model'],
-        out_dir=Path(config['out_dir']),
-    )
+    if stage == 'align':
+        model = AlignNet.load_from_checkpoint(
+            in_channels=dm.num_channels,
+            **config['model']['align'],
+            out_dir=Path(config['out_dir']),
+        )
+    else:
+        model = FullNet(
+            in_channels=dm.num_channels,
+            num_classes=dm.num_classes,
+            **config['model'],
+            out_dir=Path(config['out_dir']),
+        )
 
     logger = TensorBoardLogger(
         save_dir=config['work_dir'],
@@ -63,7 +76,7 @@ def predict(stage: str, mixed: bool, devices: int, config: str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('stage', choices=['instances', 'highres', 'landmarks'])
+    parser.add_argument('stage', choices=['align', 'instances', 'highres', 'landmarks'])
     parser.add_argument('--mixed', action='store_true')
     parser.add_argument('--devices', required=False, default=1, type=int)
     parser.add_argument('--config', required=False, default='teethland/config/config.yaml', type=str)

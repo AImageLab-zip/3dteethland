@@ -172,10 +172,11 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
     def process_landmarks(
         self,
         labels: PointTensor,
+        affine: TensorType[4, 4, torch.float32],
         landmarks: PointTensor,
     ) -> PointTensor:
         # apply inverse affine transformation to undo preprocessing
-        affine = labels.cache['rot_matrix'] @ self.affine[0]
+        affine = affine @ self.affine[0]
         landmarks_hom = torch.column_stack((
             landmarks.C, torch.ones_like(landmarks.C[:, 0]),
         ))
@@ -246,11 +247,12 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
         if stage is None or stage == 'predict':
             files = self._files('predict', exclude=[])
             print('Total number of files:', len(files))
-            _, files = self._split(files)
+            # _, files = self._split(files)
             self.pred_dataset = TeethSegDataset(
                 stage='predict',
                 root=self.root,
                 files=files,
+                norm=self.norm,
                 clean=self.clean,
                 transform=self.default_transforms,
             )

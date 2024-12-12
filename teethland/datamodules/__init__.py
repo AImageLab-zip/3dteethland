@@ -1,3 +1,4 @@
+from teethland.datamodules.teethalign import TeethAlignDataModule
 from teethland.datamodules.teethbinseg import TeethBinSegDataModule
 from teethland.datamodules.teethfull import (
     TeethInstFullDataModule,

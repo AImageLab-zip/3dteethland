@@ -458,14 +458,15 @@ class PointTensor:
         self,
         max_neighbor_dist: float=0.04,
         min_points: int=1,
-        weighted: bool=False,
+        weighted_cluster: bool=False,
+        weighted_average: bool=False,
         return_index: bool=False,
     ):
         if not self:
             return self
 
         # cluster points using DBSCAN
-        if weighted:
+        if weighted_cluster:
             max_range = (
                 self._coordinates.amax(dim=0)
                 - self._coordinates.amin(dim=0)
@@ -483,6 +484,8 @@ class PointTensor:
             )
         else:
             cluster_idxs = self._cluster_cpu(max_neighbor_dist, min_points)
+            noisy = (cluster_idxs == -1)
+            cluster_idxs[noisy] = torch.arange(cluster_idxs.amax() + 1, cluster_idxs.amax() + 1 + noisy.sum()).to(cluster_idxs)
 
         if return_index:
             return cluster_idxs.long()
@@ -496,7 +499,7 @@ class PointTensor:
         # compute cluster centroids by averaging
         cluster_idxs += (cluster_idxs.amax(dim=0) + 1) * batch_indices
         _, cluster_idxs = torch.unique(cluster_idxs, return_inverse=True)
-        if weighted:
+        if weighted_average:
             coords_sum = scatter(
                 src=coordinates * self.F[mask, None],
                 index=cluster_idxs,
@@ -522,23 +525,17 @@ class PointTensor:
         max_idxs = scatter(cluster_idxs + 1, batch_indices, dim_size=self.batch_size, reduce='max')
         min_idxs = scatter(cluster_idxs, batch_indices, dim_size=self.batch_size, reduce='min')
 
-        if weighted:
-            scores = scatter(
-                src=self.F[mask],
-                index=cluster_idxs,
-                dim=0,
-                reduce='max',
-            )
-            pt = PointTensor(
-                coordinates=cluster_centroids,
-                features=scores,
-                batch_counts=max_idxs - min_idxs,
-            )
-        else:
-            pt = PointTensor(
-                coordinates=cluster_centroids,
-                batch_counts=max_idxs - min_idxs,
-            )
+        scores = scatter(
+            src=self.F[mask],
+            index=cluster_idxs,
+            dim=0,
+            reduce='max',
+        ) if self.F is not None else None
+        pt = PointTensor(
+            coordinates=cluster_centroids,
+            features=scores,
+            batch_counts=max_idxs - min_idxs,
+        )
         
         return pt
 

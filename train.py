@@ -3,16 +3,17 @@ import argparse
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
-import torch
 import yaml
 
 from teethland.datamodules import (
+    TeethAlignDataModule,
     TeethBinSegDataModule,
     TeethInstSegDataModule,
     TeethLandDataModule,
     TeethMixedSegDataModule,
 )
 from teethland.models import (
+    AlignNet,
     BinSegNet,
     DentalNet,
     LandmarkNet,
@@ -26,7 +27,9 @@ def main(stage: str, devices: int, checkpoint: str):
 
     pl.seed_everything(config['seed'], workers=True)
 
-    if stage == 'instseg':
+    if stage == 'align':
+        dm = TeethAlignDataModule(seed=config['seed'], **config['datamodule'])
+    elif stage == 'instseg':
         dm = TeethInstSegDataModule(seed=config['seed'], **config['datamodule'])
     elif stage == 'mixedseg':
         dm = TeethMixedSegDataModule(seed=config['seed'], **config['datamodule'])
@@ -36,6 +39,11 @@ def main(stage: str, devices: int, checkpoint: str):
         dm = TeethLandDataModule(seed=config['seed'], **config['datamodule'])
 
     # dm.setup('fit')
+    if stage == 'align':
+        model = AlignNet(
+            in_channels=dm.num_channels,
+            **config['model'][stage],
+        )
     if stage in ['instseg', 'mixedseg']:
         model = DentalNet(
             in_channels=dm.num_channels,
@@ -92,7 +100,7 @@ def main(stage: str, devices: int, checkpoint: str):
         callbacks=[
             epoch_checkpoint_callback,
             loss_checkpoint_callback,
-            metric_checkpoint_callback,
+            *([metric_checkpoint_callback] if stage != 'align' else []),
             LearningRateMonitor(),
         ],
     )
@@ -103,7 +111,7 @@ def main(stage: str, devices: int, checkpoint: str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('stage', choices=['instseg', 'mixedseg', 'binseg', 'landmarks'])
+    parser.add_argument('stage', choices=['align', 'instseg', 'mixedseg', 'binseg', 'landmarks'])
     parser.add_argument('--devices', required=False, default=1, type=int)
     parser.add_argument('--checkpoint', required=False, default=None)
     args = parser.parse_args()

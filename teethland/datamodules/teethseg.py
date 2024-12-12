@@ -21,6 +21,7 @@ class TeethSegDataModule(pl.LightningDataModule):
         regex_filter: str,
         extensions: str,
         fold: int,
+        norm: bool,
         clean: bool,
         val_size: float,
         include_val_as_train: bool,
@@ -38,6 +39,7 @@ class TeethSegDataModule(pl.LightningDataModule):
         self.filter = f'/(?!{os.sep}\.)[^{os.sep}\.]*({regex_filter})'
         self.extensions = extensions
         self.fold = fold
+        self.norm = norm
         self.clean = clean
         self.val_size = val_size
         self.include_val_as_train = include_val_as_train
@@ -102,8 +104,9 @@ class TeethSegDataModule(pl.LightningDataModule):
             with open(self.fold, 'r') as f:
                 val_mesh_files = [l.strip() for l in f.readlines() if l.strip()]
 
-            train_files = [fs for fs in files if fs[0].name not in val_mesh_files]
-            val_files = [fs for fs in files if fs[0].name in val_mesh_files]
+            mesh_files = [fs[0] if isinstance(fs, tuple) else fs for fs in files]
+            train_files = [fs for i, fs in enumerate(files) if mesh_files[i].name not in val_mesh_files]
+            val_files = [fs for i, fs in enumerate(files) if mesh_files[i].name in val_mesh_files]
             return train_files, val_files
 
         # determine classes and mesh and annotation files of each subject
@@ -141,7 +144,7 @@ class TeethSegDataModule(pl.LightningDataModule):
 
         # write folds to storage for documentation
         for i, (_, fold_idxs) in enumerate(splits):
-            with open(f'fold_{i}.txt', 'w') as f:
+            with open(f'partials_fold_{i}.txt', 'w') as f:
                 for subject_idx in fold_idxs:
                     for fs in subject_files[subject_idx]:
                         f.write(fs[0].name + '\n')

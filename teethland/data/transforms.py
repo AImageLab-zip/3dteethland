@@ -1,8 +1,10 @@
 import copy
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import networkx
 from numpy.typing import ArrayLike, NDArray
+from scipy.spatial.transform import Rotation
 from scipy.special import softmax
 from scipy.stats import multivariate_normal, truncnorm
 from sklearn.decomposition import PCA
@@ -142,9 +144,9 @@ class RandomScale(object):
         data_dict['points'] = points * scale
 
         if 'landmark_coords' in data_dict:
-            data_dict['landmark_coords'] *= scale
+            data_dict['landmark_coords'] = data_dict['landmark_coords'] * scale
         if 'instance_centroids' in data_dict:
-            data_dict['instance_centroids'] *= scale
+            data_dict['instance_centroids'] = data_dict['instance_centroids'] * scale
         
         return data_dict
 
@@ -211,23 +213,18 @@ class RandomAxisFlip(object):
         **data_dict: Dict[str, Any],
     ) -> Dict[str, Any]:
         if self.rng.random() < self.prob:
-            coords = points[:, self.axis]
-            points[:, self.axis] = coords.max() + coords.min() - coords
+            points[:, self.axis] = -points[:, self.axis]
 
             if 'normals' in data_dict:
-                data_dict['normals'][:, self.axis] *= -1
+                data_dict['normals'][:, self.axis] = -data_dict['normals'][:, self.axis]
 
             if 'landmark_coords' in data_dict:
                 landmarks = data_dict['landmark_coords'][:, self.axis]
-                data_dict['landmark_coords'][:, self.axis] = (
-                    coords.max() + coords.min() - landmarks
-                )
+                data_dict['landmark_coords'][:, self.axis] = -landmarks
 
             if 'instance_centroids' in data_dict:
                 centroids = data_dict['instance_centroids'][:, self.axis]
-                data_dict['instance_centroids'][:, self.axis] = (
-                    coords.max() + coords.min() - centroids
-                )
+                data_dict['instance_centroids'][:, self.axis] = -centroids
 
         data_dict['points'] = points
 
@@ -307,17 +304,6 @@ class PoseNormalize:
                 [-1, 0, 0],
                 [0, 1, 0],
                 [0, 0, -1],
-            ]) @ R
-
-        # rotate 180 degrees around z-axis if points are flipped
-        points_rot = points @ R.T
-        is_middle = np.abs(points_rot[:, 0]) < np.quantile(np.abs(points_rot[:, 0]), 0.2)
-        is_high = points_rot[:, 2] > np.quantile(points_rot[:, 2], 0.8)
-        if points_rot[is_middle & is_high].mean(0)[1] > 0:
-            R = np.array([
-                [-1, 0, 0],
-                [0, -1, 0],
-                [0, 0, 1],
             ]) @ R
         
         # rotate points to principal axes of decreasing explained variance
@@ -439,7 +425,7 @@ class NormalAsFeatures:
         normals: NDArray[Any],
         **data_dict: Dict[str, Any],
     ) -> Dict[str, Any]:
-        normals /= np.linalg.norm(normals, axis=-1, keepdims=True) + self.eps
+        normals = normals / (np.linalg.norm(normals, axis=-1, keepdims=True) + self.eps)
 
         if 'features' in data_dict:
             data_dict['features'] = np.concatenate(
@@ -457,12 +443,6 @@ class NormalAsFeatures:
 
 
 class CentroidOffsetsAsFeatures:
-
-    def __init__(
-        self,
-        eps: float=1e-8,
-    ):
-        self.eps = eps
 
     def __call__(
         self,
@@ -845,5 +825,292 @@ class GenerateProposals:
             self.__class__.__name__ + '(',
             f'    proposal_points={self.proposal_points},',
             f'    max_proposals={self.max_proposals},',
+            ')',
+        ])
+    
+
+class AlignUpForward:
+
+    def __init__(
+        self,
+        basis: NDArray[Any]=np.array([
+            [-1, 0, 0],
+            [0, -1, 0],
+            [0, 0, 1],
+        ]),
+    ):
+        self.basis = basis
+    
+    def __call__(
+        self,
+        **data_dict: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        # no-op if ground-truth data is unavailable
+        if 'instances' not in data_dict:
+            return data_dict
+        
+        is_front = np.isin(data_dict['instance_labels'], [11, 21, 31, 41])
+        is_left = np.isin(data_dict['instance_labels'], [16, 36])
+        is_right = np.isin(data_dict['instance_labels'], [26, 46])
+
+        front_c = data_dict['instance_centroids'][is_front].mean(0)
+        left_c = data_dict['instance_centroids'][is_left][0]
+        right_c = data_dict['instance_centroids'][is_right][0]
+
+        dir_up = np.cross(left_c - front_c, right_c - front_c)
+        dir_up /= np.linalg.norm(dir_up)
+
+        dir_right = right_c - left_c
+        dir_right /= np.linalg.norm(dir_right)
+
+        lhs = front_c - left_c
+        dotp = lhs @ dir_right
+        back_c = left_c + dir_right * dotp
+        dir_forward = front_c - back_c
+        dir_forward /= np.linalg.norm(dir_forward)
+
+        T = np.eye(4)
+        T[:3, :3] = self.basis @ np.stack((dir_right, dir_forward, dir_up))
+
+        data_dict['points'] = data_dict['points'] @ T[:3, :3].T
+        data_dict['normals'] = data_dict['normals'] @ T[:3, :3].T
+        data_dict['affine'] = T @ data_dict.get('affine', np.eye(4))
+        data_dict['instance_centroids'] = data_dict['instance_centroids'] @ T[:3, :3].T
+
+        data_dict['dir_right'] = self.basis[0]
+        data_dict['dir_fwd'] = self.basis[1]
+        data_dict['dir_up'] = self.basis[2]
+        data_dict['trans'] = np.zeros(3)
+
+        return data_dict
+
+    def __repr__(self) -> str:
+        return '\n'.join([
+            self.__class__.__name__ + '(',
+            f'    basis={self.basis},',
+            ')',
+        ])
+    
+
+class RandomRotate:
+
+    def __init__(
+        self,
+        rng: Optional[np.random.Generator],
+    ):
+        self.rng = rng if rng is not None else np.random.default_rng()
+        self.pose_normalize = PoseNormalize()
+
+    def __call__(
+        self,
+        points: NDArray[Any],
+        normals: NDArray[Any],
+        instance_centroids: NDArray[Any],
+        **data_dict: Dict[str, Any],
+    ):
+        degrees = self.rng.random(3) * 360 - 180
+        r = Rotation.from_euler('xyz', angles=degrees, degrees=True)
+        T = np.eye(4)
+        T[:3, :3] = r.as_matrix()
+
+        # apply PCA to get a rough position
+        T = self.pose_normalize(
+            points=points @ T[:3, :3].T,
+            normals=normals @ T[:3, :3].T,
+            affine=T,
+        )['affine']
+
+        data_dict['points'] = points @ T[:3, :3].T
+        data_dict['normals'] = normals @ T[:3, :3].T
+        data_dict['affine'] = T @ data_dict.get('affine', np.eye(4))
+        data_dict['instance_centroids'] = instance_centroids @ T[:3, :3].T
+
+        if 'dir_right' in data_dict:
+            data_dict['dir_right'] = data_dict['dir_right'] @ T[:3, :3].T
+            data_dict['dir_up'] = data_dict['dir_up'] @ T[:3, :3].T
+            data_dict['dir_fwd'] = data_dict['dir_fwd'] @ T[:3, :3].T
+            data_dict['trans'] = data_dict['trans'] @ T[:3, :3].T
+
+        return data_dict
+
+    def __repr__(self) -> str:
+        return self.__class__.__name__ + '()'
+
+
+class RandomPartial:
+
+    def __init__(
+        self,
+        rng: Optional[np.random.Generator],
+        count_range: Tuple[int, int]=(2, 12),
+        keep_radius: float=0.5,
+        p: float=0.9,
+        skew: float=-0.9,
+        do_translate: bool=True,
+        do_planes: bool=True,
+    ):
+        self.rng = rng if rng is not None else np.random.default_rng()
+        self.range = count_range
+        self.keep_radius = keep_radius
+        self.p = p
+        self.do_translate = do_translate
+        self.do_planes = do_planes
+
+        num_counts = count_range[1] - count_range[0] + 1
+        middle_idx = (num_counts - 1) // 2
+        probs = np.full((num_counts,), 1 / num_counts)
+        for i in range(num_counts):
+            bias = np.trunc(i - (num_counts - 1) / 2) / middle_idx
+            probs[i] += bias * probs[middle_idx] * skew
+
+        self.probs = probs
+
+    def determine_inside(
+        self,
+        points,
+        centroids,
+    ):
+        normal = centroids[-1] - centroids[0]
+        normal /= np.linalg.norm(normal)
+        point1 = centroids[0] - self.keep_radius * normal
+        point2 = centroids[-1] + self.keep_radius * normal
+        plane1 = np.concatenate((normal, [-normal @ point1]))
+        plane2 = np.concatenate((-normal, [normal @ point2]))
+
+        middle_point = (centroids[0] + centroids[-1]) / 2
+        normal = np.cross(normal, middle_point + [0, 0, 1] - centroids[0])
+        normal /= np.linalg.norm(normal)
+        point1 = centroids[((centroids - middle_point) @ normal).argmin()] - self.keep_radius * normal
+        point2 = centroids[((centroids - middle_point) @ normal).argmax()] + self.keep_radius * normal
+        plane3 = np.concatenate((normal, [-normal @ point1]))
+        plane4 = np.concatenate((-normal, [normal @ point2]))
+
+        # determine points inside planes
+        coords_homo = np.column_stack((points, np.ones(points.shape[0])))
+        is_inside = (
+            ((coords_homo @ plane1) >= 0)
+            & ((coords_homo @ plane2) >= 0)
+            & ((coords_homo @ plane3) >= 0)
+            & ((coords_homo @ plane4) >= 0)
+        )
+
+        return is_inside
+
+    def single_connected_component(
+        self,
+        points,
+        triangles,
+        mask,
+        tooth_coord,
+    ):    
+        # get vertex mask and triangles
+        inside_triangles = triangles[np.any(mask[triangles], axis=-1)]
+        
+        vertex_mask = np.zeros_like(mask)
+        vertex_mask[inside_triangles.flatten()] = True
+        
+        vertex_map = np.full((points.shape[0],), -1)
+        vertex_map[vertex_mask] = np.arange(vertex_mask.sum())
+        inside_triangles = vertex_map[inside_triangles]
+
+        # determine component idxs
+        edges = np.concatenate((
+            inside_triangles[:, [0, 1]],
+            inside_triangles[:, [0, 2]],
+            inside_triangles[:, [1, 2]],
+        ))        
+        G = networkx.Graph(list(edges))
+        dists = np.linalg.norm(points[vertex_mask] - tooth_coord, axis=-1)
+        comp_idxs = np.array(list(networkx.node_connected_component(G, dists.argmin())))
+
+        # get final mask
+        final_mask = np.zeros_like(mask)
+        final_mask[np.nonzero(vertex_mask)[0][comp_idxs]] = True
+
+        return final_mask
+
+    def __call__(
+        self,
+        points: NDArray[Any],
+        triangles: NDArray[Any],
+        **data_dict: Dict[str, Any],
+    ):
+        if self.rng.random() > self.p:
+            data_dict['points'] = points
+            data_dict['triangles'] = triangles
+            return data_dict
+        
+        # determine a sequence based on FDI labels
+        fdis = data_dict['instance_labels']
+        q1 = (fdis > 10) & (fdis < 20)
+        q2 = (fdis > 20) & (fdis < 30)
+        q3 = (fdis > 30) & (fdis < 40)
+        q4 = (fdis > 40) & (fdis < 50)        
+        sort_idxs = np.concatenate((
+            np.nonzero(q1)[0][np.argsort(fdis[q1])[::-1]],
+            np.nonzero(q2)[0][np.argsort(fdis[q2])],
+            np.nonzero(q3)[0][np.argsort(fdis[q3])[::-1]],
+            np.nonzero(q4)[0][np.argsort(fdis[q4])],
+        ))
+
+        # sample number of teeth
+        count_range = np.arange(self.range[0], min(self.range[1], sort_idxs.shape[0]) + 1)
+        probs = self.probs[:count_range.shape[0]] / sum(self.probs[:count_range.shape[0]])
+        num_teeth = self.rng.choice(count_range, p=probs)
+
+        # sample consecutive teeth
+        start_tooth = self.rng.integers(sort_idxs.shape[0] - num_teeth, endpoint=True)
+        tooth_idxs = sort_idxs[start_tooth:start_tooth + num_teeth]
+
+        centroids = data_dict['instance_centroids'][tooth_idxs]
+        if self.do_planes:
+            # determine points inside of four planes
+            is_inside = self.determine_inside(points, centroids)
+
+            # determine largest area with connected triangles
+            vertex_mask = self.single_connected_component(
+                points, triangles, is_inside, centroids[0],
+            )
+        else:
+            # keep the points close to centroids of selected teeth
+            dists = np.linalg.norm(points[None] - centroids[:, None], axis=-1).min(0)
+            vertex_mask = dists < self.keep_radius
+
+        # update triangles
+        vertex_map = np.full((points.shape[0],), -1)
+        vertex_map[vertex_mask] = torch.arange(vertex_mask.sum())
+        triangles = vertex_map[triangles]
+        triangles = triangles[np.all(triangles >= 0, axis=-1)]
+
+        data_dict['points'] = points[vertex_mask]
+        data_dict['triangles'] = triangles
+        data_dict['normals'] = data_dict['normals'][vertex_mask]
+        data_dict['labels'] = data_dict['labels'][vertex_mask]
+        data_dict['instances'] = data_dict['instances'][vertex_mask]
+        data_dict['point_count'] = vertex_mask.sum()
+        data_dict['triangle_count'] = triangles.shape[0]
+
+        if not self.do_translate:
+            return data_dict
+
+        trans = -points[vertex_mask].mean(0)
+        data_dict['points'] = data_dict['points'] + trans
+        data_dict['instance_centroids'] = data_dict['instance_centroids'] + trans
+        T = np.eye(4)
+        T[:3, 3] = trans
+        data_dict['affine'] = T @ data_dict.get('affine', np.eye(4))
+        data_dict['trans'] = data_dict.get('trans', np.zeros(3)) + trans
+
+        return data_dict
+
+    def __repr__(self) -> str:
+        return '\n'.join([
+            self.__class__.__name__ + '(',
+            f'    range={self.range},',
+            f'    keep_radius={self.keep_radius},',
+            f'    p={self.p},',
+            f'    do_translate={self.do_translate},',
+            f'    do_planes={self.do_planes},',
+            f'    probs={self.probs},',
             ')',
         ])

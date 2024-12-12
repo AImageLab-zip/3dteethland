@@ -18,12 +18,13 @@ class TeethSegDataset(MeshDataset):
 
     def __init__(
         self,
+        norm: bool,
         clean: bool,
         pre_transform: Callable[..., Dict[str, Any]]=dict,
         **kwargs: Dict[str, Any],
     ) -> None:
         pre_transform = T.Compose(
-            T.ZScoreNormalize(self.MEAN, self.STD),
+            T.ZScoreNormalize(self.MEAN, self.STD) if norm else dict,
             T.PoseNormalize() if clean else dict,
             T.InstanceCentroids(),
             pre_transform,
@@ -58,6 +59,7 @@ class TeethSegDataset(MeshDataset):
 
         return {
             'scan_file': file.as_posix(),
+            'affine': np.eye(4),
             'is_lower': self.load_jaw(file) in ['lower', 'mandible'],
             'points': mesh.vertex_matrix(),
             'triangles': mesh.face_matrix(),
