@@ -24,6 +24,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
         self,
         batch: Optional[Tuple[int, int]],
         uniform_density_voxel_size: int,
+        distinguish_left_right: bool,
         distinguish_upper_lower: bool,
         m3_as_m2: bool,
         random_partial: bool,
@@ -42,6 +43,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
         self.batch = None if batch is None else slice(*batch)
         self.use_boundary_aware = boundary_aware.pop('use')
         self.boundary_aware_cfg = boundary_aware
+        self.distinguish_left_right = distinguish_left_right
         self.distinguish_upper_lower = distinguish_upper_lower
         self.m3_as_m2 = m3_as_m2
         self.rand_partial = random_partial
@@ -105,6 +107,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
     @property
     def num_classes(self) -> int:
         factor = 1 if self.filter in ['lower', 'upper'] or not self.distinguish_upper_lower else 2
+        factor *= 2 if self.distinguish_left_right else 1
         number = 7 if self.m3_as_m2 else 8
         return factor * number
 
@@ -128,23 +131,18 @@ class TeethInstSegDataModule(TeethSegDataModule):
             )
 
         classes[(11 <= labels) & (labels <= 18)] -= 11
-        classes[(21 <= labels) & (labels <= 28)] -= 21
+        classes[(21 <= labels) & (labels <= 28)] -= 13 if self.distinguish_left_right else 21
         if self.m3_as_m2:
             classes[labels == 18] = 6
-            classes[labels == 28] = 6
+            classes[(21 <= labels) & (labels <= 28)] -= 1 if self.distinguish_left_right else 0
+            classes[labels == 28] = 13 if self.distinguish_left_right else 6
 
-        if self.filter == 'lower' or not self.distinguish_upper_lower:
-            classes[(31 <= labels) & (labels <= 38)] -= 31
-            classes[(41 <= labels) & (labels <= 48)] -= 41
-            if self.m3_as_m2:
-                classes[labels == 38] = 6
-                classes[labels == 48] = 6
-        else:
-            classes[(31 <= labels) & (labels <= 38)] -= 23 + self.m3_as_m2
-            classes[(41 <= labels) & (labels <= 48)] -= 33 + self.m3_as_m2
-            if self.m3_as_m2:
-                classes[labels == 38] = 13
-                classes[labels == 48] = 13
+        classes[(31 <= labels) & (labels <= 38)] -= 31
+        classes[(41 <= labels) & (labels <= 48)] -= 33 if self.distinguish_left_right else 41
+        if self.m3_as_m2:
+            classes[labels == 38] = 6
+            classes[(41 <= labels) & (labels <= 48)] -= 1 if self.distinguish_left_right else 0
+            classes[labels == 48] = 13 if self.distinguish_left_right else 6
         
         return classes
     

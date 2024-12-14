@@ -159,13 +159,14 @@ def check_predictions():
     root = Path('/home/mkaailab/Documents/IOS/Katja VOs/transfer_2892173_files_6b1a93dd')
     # root = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
     root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/root_full')
+    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/checked_full')
     # root = Path('/home/mkaailab/Documents/CBCT/fusion/complete_cadavers/IOS scans')
     # root = Path('/home/mkaailab/Documents/IOS/Katja Vos/AKMA')
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test')
     mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('**/*.ply')) + list(root.glob('**/*.stl')))
     # root = root.parent / 'last_case'
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
+    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/checked_full')
     ann_files = sorted(root.glob('**/*er.json'))
     # ann_files = sorted(root.glob('**/*er.json'))
     clean = False

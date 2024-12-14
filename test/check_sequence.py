@@ -24,8 +24,8 @@ def determine_seqence(centroids):
 
 
 if __name__ == '__main__':
-    mesh_root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/align_partial')
-    labels_root = mesh_root.parent / 'root_partial'
+    mesh_root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/align_full')
+    labels_root = mesh_root.parent / 'root_full'
 
     ms = pymeshlab.MeshSet()
 

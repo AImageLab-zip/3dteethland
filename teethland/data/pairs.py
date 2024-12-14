@@ -9,7 +9,7 @@ import pymeshlab
 from tqdm import tqdm
 
 if __name__ == '__main__':
-    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/root_partial')
+    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/root_full')
 
     ms = pymeshlab.MeshSet()
     pair_dists = defaultdict(list)
@@ -42,19 +42,22 @@ if __name__ == '__main__':
         dists = np.linalg.norm(centroids[None] - centroids[:, None], axis=-1)
         for i, fdi1 in enumerate(fdis):
             for j, fdi2 in enumerate(fdis):
+                if i == j:
+                    continue
                 pair_dists[f'{fdi1}_{fdi2}'].append(dists[i, j])
     
     out = {k: np.zeros((49, 49)) for k in ['means', 'stds']}
-    for fdis, dists in pair_dists.items():
-        fdi1, fdi2 = map(int, fdis.split('_'))
-        mean = np.mean(dists)
-        gamma_a = 5 + len(dists) / 2
-        gamma_b = 1 / (5 + np.sum((mean - dists) ** 2) / 2)
-        gamma_mode = (gamma_a - 1) * gamma_b
-        std = np.sqrt(1 / gamma_mode)
-        
-        out['means'][fdi1][fdi2] = mean
-        out['stds'][fdi1][fdi2] = std
+    for fdi1 in range(49):
+        for fdi2 in range(49):
+            dists = pair_dists[f'{fdi1}_{fdi2}']
+            mean = np.mean(dists) if dists else np.array(0)
+            gamma_a = 5 + len(dists) / 2
+            gamma_b = 1 / (5 + np.sum((mean - dists) ** 2) / 2)
+            gamma_mode = (gamma_a - 1) * gamma_b
+            std = np.sqrt(1 / gamma_mode)
+            
+            out['means'][fdi1, fdi2] = mean
+            out['stds'][fdi1, fdi2] = std
 
     with open('pair_dists.pkl', 'wb') as f:
         pickle.dump(out, f)

@@ -139,6 +139,7 @@ class IdentificationLoss(nn.Module):
 
         self.alpha = alpha
         self.gamma = gamma
+        self.index = torch.tensor([8, 9, 10, 11, 12, 13, 14, 15, 7, 6, 5, 4, 3, 2, 1, 0])
 
     def forward(
         self,
@@ -152,10 +153,10 @@ class IdentificationLoss(nn.Module):
         focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
 
         diff_loss = torch.zeros_like(ce_loss[:0])
-        index = torch.arange(classes.F.shape[1]).to(classes.F)
+        index = self.index.to(classes.F)
         for b in range(classes.batch_size):
             b_labels = (classes.batch(b).F.softmax(dim=-1) * index).sum(-1)
-            b_targets = targets.batch(b).F
+            b_targets = index[targets.batch(b).F]
             diff_labels = torch.abs(b_labels[None] - b_labels[:, None])
             diff_targets = torch.abs(b_targets[None] - b_targets[:, None])
 

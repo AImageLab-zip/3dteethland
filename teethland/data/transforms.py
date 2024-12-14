@@ -226,6 +226,14 @@ class RandomAxisFlip(object):
                 centroids = data_dict['instance_centroids'][:, self.axis]
                 data_dict['instance_centroids'][:, self.axis] = -centroids
 
+            if 'labels' in data_dict:
+                labels = data_dict['instance_labels'].copy()
+                labels[np.isin(data_dict['instance_labels'] // 10, [1, 3])] += 10
+                labels[np.isin(data_dict['instance_labels'] // 10, [2, 4])] -= 10
+
+                data_dict['instance_labels'] = labels
+                data_dict['labels'] = labels[data_dict['instances']]
+
         data_dict['points'] = points
 
         return data_dict

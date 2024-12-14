@@ -132,6 +132,8 @@ class AlignNet(pl.LightningModule):
 
         # make two vectors orthogonal
         dots = torch.einsum('bi,bi->b', pred_up, pred_fwd)
+        if torch.abs(dots[0]) > 0.01:
+            print(dots, self.trainer.datamodule.scan_file)
         pred_fwd -= dots[:, None] * pred_up
 
         # determine non-reflecting rotation matrix to standard basis
