@@ -46,6 +46,8 @@ def main(stage: str, devices: int, checkpoint: str):
         )
     if stage in ['instseg', 'mixedseg']:
         model = DentalNet(
+        # model = DentalNet.load_from_checkpoint(
+        #     checkpoint_path=config['model'][stage].pop('checkpoint_path'),
             in_channels=dm.num_channels,
             num_classes=dm.num_classes,
             **config['model'][stage],

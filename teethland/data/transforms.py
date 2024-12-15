@@ -265,6 +265,10 @@ class RandomShiftCentroids:
     ) -> Dict[str, Any]:
         out = []
         for i, mean in enumerate(instance_centroids):
+            if (instances == i).sum() <= 1:
+                out.append(mean)
+                continue
+
             cov = np.cov(points[instances == i].T)
             samples = multivariate_normal.rvs(mean, cov, size=1000, random_state=self.rng)
             probs = multivariate_normal.pdf(samples, mean, cov)
@@ -795,7 +799,7 @@ class GenerateProposals:
             replace=False,
         ))
 
-        centroids = data_dict['instance_centroids'][instance_idxs]        
+        centroids = data_dict['instance_centroids'][instance_idxs]
         if 'landmark_coords' in data_dict:
             coords = data_dict['landmark_coords']
             classes = data_dict['landmark_classes']

@@ -1,5 +1,5 @@
 work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: china_instseg_all
+version: china_binseg_all
 seed: 0
 
 model:
@@ -43,7 +43,7 @@ model:
     checkpoint_path: 'checkpoints/instseg_train_addenda.ckpt'
     # checkpoint_path: 'checkpoints/instseg_full.ckpt'
     # checkpoint_path: 'checkpoints/instseg_ablation.ckpt'
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_instseg_partials/checkpoints/weights-epoch=499.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_instseg_nofdiloss/checkpoints/weights-epoch=294.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 600  # overfitting after 600
@@ -131,7 +131,7 @@ model:
 accumulate_grad_batches: 1  # 1 better segmentation, worse classification
 gradient_clip_norm: 35  # 10 is worse
 
-out_dir: '/home/mkaailab/Documents/IOS/partials/full_dataset/align_partial'
+out_dir: '/home/mkaailab/Documents/IOS/partials/full_dataset/result_partial'
 # out_dir: ''
 datamodule:
   root: '/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper'
@@ -156,9 +156,9 @@ datamodule:
   sampler: 'balanced'  # 'default' or 'balanced'
   batch: null  # [0, 100]
   batch_size: 2
-  num_workers: 4
+  num_workers: 0
   pin_memory: True
-  persistent_workers: True
+  persistent_workers: False
   uniform_density_voxel_size: [0.025, 0.01]  # instseg, landmarks
   boundary_aware:
     use: False

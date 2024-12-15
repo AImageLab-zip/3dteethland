@@ -17,6 +17,7 @@ class TeethBinSegDataModule(TeethSegDataModule):
     def __init__(
         self,
         uniform_density_voxel_size: int,
+        random_partial: bool,
         proposal_points: int,
         max_proposals: int,
         **kwargs,
@@ -31,6 +32,7 @@ class TeethBinSegDataModule(TeethSegDataModule):
         )
 
         self.uniform_density_voxel_size = uniform_density_voxel_size[1]
+        self.rand_partial = random_partial
         self.proposal_points = proposal_points
         self.max_proposals = max_proposals
 
@@ -55,6 +57,7 @@ class TeethBinSegDataModule(TeethSegDataModule):
             train_files, val_files = self._split(files)
                                       
             train_transforms = T.Compose(
+                T.RandomPartial(rng=rng, do_translate=False) if self.rand_partial else dict,
                 T.RandomAxisFlip(rng=rng),
                 T.RandomScale(rng=rng),
                 T.RandomZAxisRotate(rng=rng),
@@ -66,6 +69,7 @@ class TeethBinSegDataModule(TeethSegDataModule):
                 stage='fit',
                 root=self.root,
                 files=train_files,
+                norm=self.norm,
                 clean=self.clean,
                 transform=train_transforms,
             )
@@ -73,6 +77,7 @@ class TeethBinSegDataModule(TeethSegDataModule):
                 stage='fit',
                 root=self.root,
                 files=val_files,
+                norm=self.norm,
                 clean=self.clean,
                 transform=default_transforms,
             )
