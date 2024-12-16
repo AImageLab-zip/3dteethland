@@ -265,7 +265,7 @@ class RandomShiftCentroids:
     ) -> Dict[str, Any]:
         out = []
         for i, mean in enumerate(instance_centroids):
-            if (instances == i).sum() <= 1:
+            if (instances == i).sum() <= 5:
                 out.append(mean)
                 continue
 
@@ -958,6 +958,7 @@ class RandomPartial:
         keep_radius: float=0.5,
         p: float=0.9,
         skew: float=-0.9,
+        min_points: int=0,
         do_translate: bool=True,
         do_planes: bool=True,
     ):
@@ -965,6 +966,7 @@ class RandomPartial:
         self.range = count_range
         self.keep_radius = keep_radius
         self.p = p
+        self.min_points = min_points
         self.do_translate = do_translate
         self.do_planes = do_planes
 
@@ -1064,29 +1066,32 @@ class RandomPartial:
             np.nonzero(q3)[0][np.argsort(fdis[q3])[::-1]],
             np.nonzero(q4)[0][np.argsort(fdis[q4])],
         ))
+        while True:
+            # sample number of teeth
+            count_range = np.arange(self.range[0], min(self.range[1], sort_idxs.shape[0]) + 1)
+            probs = self.probs[:count_range.shape[0]] / sum(self.probs[:count_range.shape[0]])
+            num_teeth = self.rng.choice(count_range, p=probs)
 
-        # sample number of teeth
-        count_range = np.arange(self.range[0], min(self.range[1], sort_idxs.shape[0]) + 1)
-        probs = self.probs[:count_range.shape[0]] / sum(self.probs[:count_range.shape[0]])
-        num_teeth = self.rng.choice(count_range, p=probs)
+            # sample consecutive teeth
+            start_tooth = self.rng.integers(sort_idxs.shape[0] - num_teeth, endpoint=True)
+            tooth_idxs = sort_idxs[start_tooth:start_tooth + num_teeth]
 
-        # sample consecutive teeth
-        start_tooth = self.rng.integers(sort_idxs.shape[0] - num_teeth, endpoint=True)
-        tooth_idxs = sort_idxs[start_tooth:start_tooth + num_teeth]
+            centroids = data_dict['instance_centroids'][tooth_idxs]
+            if self.do_planes:
+                # determine points inside of four planes
+                is_inside = self.determine_inside(points, centroids)
 
-        centroids = data_dict['instance_centroids'][tooth_idxs]
-        if self.do_planes:
-            # determine points inside of four planes
-            is_inside = self.determine_inside(points, centroids)
+                # determine largest area with connected triangles
+                vertex_mask = self.single_connected_component(
+                    points, triangles, is_inside, centroids[0],
+                )
+            else:
+                # keep the points close to centroids of selected teeth
+                dists = np.linalg.norm(points[None] - centroids[:, None], axis=-1).min(0)
+                vertex_mask = dists < self.keep_radius
 
-            # determine largest area with connected triangles
-            vertex_mask = self.single_connected_component(
-                points, triangles, is_inside, centroids[0],
-            )
-        else:
-            # keep the points close to centroids of selected teeth
-            dists = np.linalg.norm(points[None] - centroids[:, None], axis=-1).min(0)
-            vertex_mask = dists < self.keep_radius
+            if vertex_mask.sum() >= self.min_points:
+                break
 
         # update triangles
         vertex_map = np.full((points.shape[0],), -1)

@@ -1,4 +1,4 @@
-work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
+work_dir: '/home/niels/Documents/logs/tooth_segmentation'
 version: china_binseg_all
 seed: 0
 
@@ -142,7 +142,7 @@ datamodule:
   # root: '/mnt/diag/IOS/3dteethseg/challenge_dataset'
   # root: '/home/mkaailab/Documents/IOS/Katja Vos/AKMA'
   # root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/root'
-  root: '/home/mkaailab/Documents/IOS/partials/full_dataset'
+  root: '/home/niels/Documents/IOS/partials/full_dataset'
   # root: '/home/mkaailab/Documents/IOS/partials/full_dataset/root_partial'
   landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
   regex_filter: 'full'
@@ -156,9 +156,9 @@ datamodule:
   sampler: 'balanced'  # 'default' or 'balanced'
   batch: null  # [0, 100]
   batch_size: 2
-  num_workers: 0
+  num_workers: 4
   pin_memory: True
-  persistent_workers: False
+  persistent_workers: True
   uniform_density_voxel_size: [0.025, 0.01]  # instseg, landmarks
   boundary_aware:
     use: False

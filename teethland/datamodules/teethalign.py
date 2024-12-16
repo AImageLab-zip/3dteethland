@@ -75,7 +75,7 @@ class TeethAlignDataModule(TeethInstSegDataModule):
             train_files, val_files = self._split(files)
 
             transforms = T.Compose(
-                T.RandomPartial(rng=rng),
+                T.RandomPartial(rng=rng) if self.rand_partial else dict,
                 T.RandomRotate(rng=rng),
                 self.default_transforms,
             )
