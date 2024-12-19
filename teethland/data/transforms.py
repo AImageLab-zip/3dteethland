@@ -212,29 +212,34 @@ class RandomAxisFlip(object):
         points: NDArray[Any],
         **data_dict: Dict[str, Any],
     ) -> Dict[str, Any]:
-        if self.rng.random() < self.prob:
-            points[:, self.axis] = -points[:, self.axis]
+        if self.rng.random() >= self.prob:
+            data_dict['flip'] = False
+            data_dict['points'] = points
 
-            if 'normals' in data_dict:
-                data_dict['normals'][:, self.axis] = -data_dict['normals'][:, self.axis]
+            return data_dict
 
-            if 'landmark_coords' in data_dict:
-                landmarks = data_dict['landmark_coords'][:, self.axis]
-                data_dict['landmark_coords'][:, self.axis] = -landmarks
-
-            if 'instance_centroids' in data_dict:
-                centroids = data_dict['instance_centroids'][:, self.axis]
-                data_dict['instance_centroids'][:, self.axis] = -centroids
-
-            if 'labels' in data_dict:
-                labels = data_dict['instance_labels'].copy()
-                labels[np.isin(data_dict['instance_labels'] // 10, [1, 3])] += 10
-                labels[np.isin(data_dict['instance_labels'] // 10, [2, 4])] -= 10
-
-                data_dict['instance_labels'] = labels
-                data_dict['labels'] = labels[data_dict['instances']]
-
+        data_dict['flip'] = True
+        points[:, self.axis] = -points[:, self.axis]
         data_dict['points'] = points
+
+        if 'normals' in data_dict:
+            data_dict['normals'][:, self.axis] = -data_dict['normals'][:, self.axis]
+
+        if 'landmark_coords' in data_dict:
+            landmarks = data_dict['landmark_coords'][:, self.axis]
+            data_dict['landmark_coords'][:, self.axis] = -landmarks
+
+        if 'instance_centroids' in data_dict:
+            centroids = data_dict['instance_centroids'][:, self.axis]
+            data_dict['instance_centroids'][:, self.axis] = -centroids
+
+        if 'labels' in data_dict:
+            labels = data_dict['instance_labels'].copy()
+            labels[np.isin(data_dict['instance_labels'] // 10, [1, 3])] += 10
+            labels[np.isin(data_dict['instance_labels'] // 10, [2, 4])] -= 10
+
+            data_dict['instance_labels'] = labels
+            data_dict['labels'] = labels[data_dict['instances']]
 
         return data_dict
 

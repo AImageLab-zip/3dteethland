@@ -1,5 +1,5 @@
 work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: china_binseg_all
+version: test
 seed: 0
 
 model:
@@ -43,7 +43,7 @@ model:
     checkpoint_path: 'checkpoints/instseg_train_addenda.ckpt'
     # checkpoint_path: 'checkpoints/instseg_full.ckpt'
     # checkpoint_path: 'checkpoints/instseg_ablation.ckpt'
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_instseg_nofdiloss/checkpoints/weights-epoch=294.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_instseg_all/checkpoints/weights-epoch=599.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 600  # overfitting after 600
@@ -112,6 +112,7 @@ model:
     checkpoint_path: 'checkpoints/binseg_train_addenda.ckpt'
     # checkpoint_path: 'checkpoints/binseg_fold4.ckpt'
     # checkpoint_path: ''
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_binseg_all/checkpoints/weights-epoch=249.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 250
@@ -142,23 +143,23 @@ datamodule:
   # root: '/mnt/diag/IOS/3dteethseg/challenge_dataset'
   # root: '/home/mkaailab/Documents/IOS/Katja Vos/AKMA'
   # root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/root'
-  root: '/home/mkaailab/Documents/IOS/partials/full_dataset'
+  root: '/home/mkaailab/Documents/IOS/partials/full_dataset/root_partial'
   # root: '/home/mkaailab/Documents/IOS/partials/full_dataset/root_partial'
   landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
-  regex_filter: 'full'
+  regex_filter: '2022109_'
   extensions: ['ply', 'stl', 'obj']
   # fold: 0
-  fold: 'full_fold_0.txt'
-  norm: False
-  clean: False  # TODO: Set to true for Grand Challenge inference
+  fold: 'partial_fold_0.txt'
+  norm: True
+  clean: True  # TODO: Set to true for Grand Challenge inference
   val_size: 0.2
   include_val_as_train: false
   sampler: 'balanced'  # 'default' or 'balanced'
   batch: null  # [0, 100]
   batch_size: 2
-  num_workers: 0
+  num_workers: 4
   pin_memory: True
-  persistent_workers: False
+  persistent_workers: True
   uniform_density_voxel_size: [0.025, 0.01]  # instseg, landmarks
   boundary_aware:
     use: False
@@ -171,5 +172,5 @@ datamodule:
   max_proposals: 8
   m3_as_m2: False
   distinguish_left_right: true
-  random_partial: True
+  random_partial: False
   distinguish_upper_lower: false  # True worse

@@ -247,7 +247,6 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
         if stage is None or stage == 'predict':
             files = self._files('predict', exclude=[])
             print('Total number of files:', len(files))
-            # _, files = self._split(files)
             self.pred_dataset = TeethSegDataset(
                 stage='predict',
                 root=self.root,

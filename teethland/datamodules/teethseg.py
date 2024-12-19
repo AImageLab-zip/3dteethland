@@ -144,7 +144,7 @@ class TeethSegDataModule(pl.LightningDataModule):
 
         # write folds to storage for documentation
         for i, (_, fold_idxs) in enumerate(splits):
-            with open(f'full_fold_{i}.txt', 'w') as f:
+            with open(f'partial_fold_{i}.txt', 'w') as f:
                 for subject_idx in fold_idxs:
                     for fs in subject_files[subject_idx]:
                         f.write(fs[0].name + '\n')

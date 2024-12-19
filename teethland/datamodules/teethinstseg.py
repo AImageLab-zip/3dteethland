@@ -1,4 +1,4 @@
-import pickle
+import json
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pytorch_lightning.trainer.states import RunningStage
 import torch
-from torch.distributions import Normal
+from torch.distributions.multivariate_normal import MultivariateNormal
 from torchtyping import TensorType
 
 from teethland import PointTensor
@@ -186,7 +186,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
 
         idxs = torch.full((classes.C.shape[0],), -1).to(classes.C.device)
         inverse = torch.full_like(idxs, -1)
-        idxs[0] = classes.C[:, 1].argmax()
+        idxs[0] = classes.C[:, 1].argmax()  # most posterior
         inverse[idxs[0]] = 0
         for i in range(1, idxs.shape[0]):
             dots = cos_angles[idxs[i - 1], inverse == -1]
@@ -201,40 +201,35 @@ class TeethInstSegDataModule(TeethSegDataModule):
         classes,
         idxs,
     ):
-        with open('pair_dists.pkl', 'rb') as f:
-            pair_normals = pickle.load(f)
-        means = torch.from_numpy(pair_normals['means']).to(classes.F.device)
-        stds = torch.from_numpy(pair_normals['stds']).to(classes.F.device)
+        with open('fdi_pair_distrs.json', 'r') as f:
+            pair_normals = json.load(f)
+        means = torch.tensor(pair_normals['means']).to(classes.F.device)
+        covs = torch.tensor(pair_normals['covs']).to(classes.F.device)
 
-        trans_probs = torch.zeros(idxs.shape[0] - 1, 16, 16).to(classes.F)
+        offset = 16 * self.is_lower[0]
+        normals = MultivariateNormal(
+            loc=means[offset:offset + 16, offset:offset + 16, :2],
+            covariance_matrix=covs[offset:offset + 16, offset:offset + 16, :2, :2],
+        )
+
+        trans_log_probs = torch.zeros(idxs.shape[0] - 1, 16, 16).to(classes.F)
         for i, (idx1, idx2) in enumerate(zip(idxs[:-1], idxs[1:])):
-            dist = torch.linalg.norm(classes.C[idx1] - classes.C[idx2]) * 17.3821
-            for iso1 in range(16):
-                for iso2 in range(16):
-                    fdi1 = 11 + 20 * self.is_lower[0] + 10 * (iso1 >= 8) + (iso1 % 8)
-                    fdi2 = 11 + 20 * self.is_lower[0] + 10 * (iso2 >= 8) + (iso2 % 8)
-                    prob = Normal(means[fdi1, fdi2], stds[fdi1, fdi2]).log_prob(dist)
-                    
-                    trans_probs[i, iso1, iso2] = prob
+            offsets = (classes.C[idx2] - classes.C[idx1]) * 17.3821
+            trans_log_probs[i] = normals.log_prob(offsets[:2])
 
-        return trans_probs
+        return trans_log_probs
     
     def dynamic_programming(
         self,
         classes,
         idxs,
-        trans_probs,
+        trans_log_probs,
+        tooth_factor: float=1.0,
     ):
         log_probs = torch.log(classes.F.softmax(dim=-1))
 
-        switch = torch.zeros(16, dtype=bool).to(classes.F.device)
-        q = torch.zeros(classes.F.shape[0], 16).to(classes.F.device)
-        if classes.C[idxs[0], 0] < 0:
-            q[0, 8:] = -log_probs[idxs[0]]
-            q[0, :8] = torch.inf
-        else:
-            q[0, :8] = -log_probs[idxs[0]]
-            q[0, 8:] = torch.inf
+        q = torch.zeros_like(log_probs)
+        q[0] = -tooth_factor * log_probs[idxs[0]]
 
         up = torch.arange(16).to(classes.F.device)
         p = torch.zeros_like(q).long()
@@ -243,16 +238,11 @@ class TeethInstSegDataModule(TeethSegDataModule):
         for i in range(1, classes.F.shape[0]):
             for j in range(16):
                 prev_costs = q[i - 1]
-                trans_costs = -trans_probs[i - 1, :, j].clone()
-                trans_costs[switch & (j // 8 != up // 8)] = torch.inf  # two switches
-                trans_costs[switch & (j // 8 == up // 8) & (j < up)] *= 2  # wrong direction
-                trans_costs[~switch & (j // 8 == up // 8) & (j > up)] *= 2  # wrong direction
+                trans_costs = -trans_log_probs[i - 1, :, j]
 
                 costs = prev_costs + trans_costs
-                if costs.argmin() // 8 != j // 8:
-                    switch[j] = True
                 m = costs.amin()
-                q[i, j] = m - log_probs[idxs[i], j % 8]
+                q[i, j] = m - tooth_factor * log_probs[idxs[i], j]
                 p[i, j] = costs.argmin()
 
         path = q[-1].argmin(keepdim=True)
@@ -266,8 +256,11 @@ class TeethInstSegDataModule(TeethSegDataModule):
         classes: PointTensor,
     ):
         idxs, inverse = self.determine_seqence(classes)
-        trans_probs = self.determine_transition_probabilities(classes, idxs)
-        path, min_cost = self.dynamic_programming(classes, idxs, trans_probs)
+        trans_log_probs = self.determine_transition_probabilities(classes, idxs)
+        path, min_cost = self.dynamic_programming(classes, idxs, trans_log_probs)
+
+        if not torch.all(path == classes.F[idxs].argmax(-1)):
+            k = 3
 
         fdis = 11 + 20 * self.is_lower[0] + 10 * (path // 8) + (path % 8)
         classes = classes.new_tensor(features=fdis[inverse])
