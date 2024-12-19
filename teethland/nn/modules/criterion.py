@@ -125,7 +125,7 @@ class IdentificationLoss(nn.Module):
         self,
         w_ce: float=1.0,
         w_focal: float=1.0,
-        w_diff: float=0.2,
+        w_diff: float=0.0,
         w_homo: float=1.0,
         alpha: float=0.25,
         gamma: float=2.0,

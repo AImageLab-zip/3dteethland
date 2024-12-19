@@ -57,7 +57,9 @@ class TeethBinSegDataModule(TeethSegDataModule):
             train_files, val_files = self._split(files)
                                       
             train_transforms = T.Compose(
-                T.RandomPartial(rng=rng, do_translate=False) if self.rand_partial else dict,
+                T.RandomPartial(
+                    rng=rng, min_points=1.25 * self.proposal_points, do_translate=False,
+                ) if self.rand_partial else dict,
                 T.RandomAxisFlip(rng=rng),
                 T.RandomScale(rng=rng),
                 T.RandomZAxisRotate(rng=rng),
