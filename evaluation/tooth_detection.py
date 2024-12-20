@@ -12,14 +12,27 @@ from tqdm import tqdm
 from teethland.visualization import palette
 
 
-def process_scan(pred_label_dict, gt_label_dict, iou_thresh: float=0.5):
+def process_scan(
+    pred_label_dict,
+    gt_label_dict,
+    iou_thresh: float=0.5,
+    min_points: int=100,
+):
     pred_instances = np.array(pred_label_dict['instances'])
     pred_point_idxs = []
     for label in np.unique(pred_instances)[1:]:
         point_idxs = np.nonzero(pred_instances == label)[0]
         pred_point_idxs.append(set(point_idxs.tolist()))
 
+    gt_labels = np.array(gt_label_dict['labels'])
     gt_instances = np.array(gt_label_dict['instances'])
+    _, gt_instances, counts = np.unique(gt_instances, return_inverse=True, return_counts=True)
+    gt_labels[(counts < min_points)[gt_instances]] = 0
+    gt_instances[(counts < min_points)[gt_instances]] = 0
+    _, gt_instances = np.unique(gt_instances, return_inverse=True)
+    gt_label_dict['labels'] = gt_labels.tolist()
+    gt_label_dict['instances'] = gt_instances.tolist()
+
     gt_point_idxs = []
     for label in np.unique(gt_instances)[1:]:
         point_idxs = np.nonzero(gt_instances == label)[0]
@@ -57,8 +70,9 @@ def process_scan(pred_label_dict, gt_label_dict, iou_thresh: float=0.5):
 if __name__ == "__main__":
     gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
+    gt_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full')
     #pred_dir = Path('mixed_ios_standardized')
-    pred_dir = Path('mixed_ios')
+    pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete')
     TLA, TSA, TIR = [], [], []
     verbose = False
 
@@ -70,7 +84,7 @@ if __name__ == "__main__":
 
     gt_files = sorted(gt_dir.glob('**/*.json'))
 
-    pred_files = sorted(pred_dir.glob('*'))[:]
+    pred_files = sorted(pred_dir.glob('*'))
     fail_files = []
     i = 0
     for pred_filename in tqdm(pred_files):        

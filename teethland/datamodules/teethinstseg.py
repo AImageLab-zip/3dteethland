@@ -1,6 +1,6 @@
 import json
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -254,18 +254,22 @@ class TeethInstSegDataModule(TeethSegDataModule):
     def teeth_classes_to_labels(
         self,
         classes: PointTensor,
+        method: Literal['argmax', 'mincost']='mincost',
     ):
-        idxs, inverse = self.determine_seqence(classes)
-        trans_log_probs = self.determine_transition_probabilities(classes, idxs)
-        path, min_cost = self.dynamic_programming(classes, idxs, trans_log_probs)
+        labels = torch.zeros(0, dtype=torch.int64).to(classes.F.device)
+        for b in range(classes.batch_size):
+            if method == 'argmax':
+                numbers = torch.argmax(classes.batch(b).F, axis=-1)
+            elif method == 'mincost':
+                idxs, inverse = self.determine_seqence(classes.batch(b))
+                trans_log_probs = self.determine_transition_probabilities(classes.batch(b), idxs)
+                path, min_cost = self.dynamic_programming(classes.batch(b), idxs, trans_log_probs)
+                numbers = path[inverse]
 
-        if not torch.all(path == classes.F[idxs].argmax(-1)):
-            k = 3
-
-        fdis = 11 + 20 * self.is_lower[0] + 10 * (path // 8) + (path % 8)
-        classes = classes.new_tensor(features=fdis[inverse])
-        
-        return classes
+            fdis = 11 + 20 * self.is_lower[0] + 10 * (numbers // 8) + (numbers % 8)
+            labels = torch.cat((labels, fdis))
+            
+        return classes.new_tensor(features=labels)
 
     def collate_downsample(
         self,

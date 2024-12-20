@@ -168,4 +168,3 @@ scratch*
 input/
 output/
 preds/
-*.json

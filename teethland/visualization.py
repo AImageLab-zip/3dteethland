@@ -166,7 +166,7 @@ def check_predictions():
     mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('**/*.ply')) + list(root.glob('**/*.stl')))
     # root = root.parent / 'last_case'
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_partial')
+    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_realpartials')
     ann_files = sorted(root.glob('**/*er.json'))
     # ann_files = sorted(root.glob('**/*er.json'))
     clean = False
@@ -184,9 +184,6 @@ def check_predictions():
             continue
         # ann_file = mesh_file.with_suffix('.json')
         # print(i, ':', mesh_file.stem, ann_file)
-
-        if not mesh_file.stem.startswith('20221111_partial_lower'):
-            continue
 
         # if not mesh_file.stem == '20221229_lower':
         #     ann_file = Path('output/TVSR5QBQ_lower.json')

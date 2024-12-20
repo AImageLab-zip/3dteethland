@@ -49,7 +49,7 @@ def instance_nms(
     point_idxs: TensorType['K', 'N', torch.int64],
     conf_thresh: float=0.5,
     iou_thresh: float=0.35,
-    score_thresh: float=0.7,
+    score_thresh: float=0.8,
 ):
     fg_point_idxs, scores = [], torch.empty(0).to(probs.F)
     for i in range(probs.batch_size):
@@ -95,10 +95,12 @@ class FullNet(pl.LightningModule):
         single_tooth: Dict[str, Any],
         proposal_points: int,
         dbscan_cfg: dict[str, Any],
+        do_align: bool,
         tta: bool,
         standardize: bool,
         stage2_iters: int,
-        post_process: bool,
+        post_process_seg: bool,
+        post_process_labels: bool,
         out_dir: Path,
         **kwargs,
     ) -> None:
@@ -140,10 +142,12 @@ class FullNet(pl.LightningModule):
         self.load_ckpt(self.single_tooth_model, ckpt)
 
         self.gen_proposals = T.GenerateProposals(proposal_points, max_proposals=40)
+        self.do_align = do_align
         self.tta = tta
         self.standardize = standardize
         self.stage2_iters = stage2_iters
-        self.post_process = post_process
+        self.post_process_seg = post_process_seg
+        self.post_process_labels = post_process_labels
         self.dbscan_cfg = dbscan_cfg
         self.only_dentalnet = stage2_iters == 0
         self.out_dir = out_dir
@@ -250,7 +254,9 @@ class FullNet(pl.LightningModule):
         if not self.standardize:
             _, classes = self.identify_model(features, clusters)
             # classes = classes.new_tensor(features=classes.F.argmax(-1))
-            labels = self.trainer.datamodule.teeth_classes_to_labels(classes)
+            labels = self.trainer.datamodule.teeth_classes_to_labels(
+                classes, method='mincost' if self.post_process_labels else 'argmax',
+            )
 
             if self.tta:
                 keep_idxs = tta_nms(clusters, labels)
@@ -374,7 +380,7 @@ class FullNet(pl.LightningModule):
             instances = torch.where(interp > max_probs, b, instances)
             max_probs = torch.maximum(max_probs, interp)
         instances = x.new_tensor(features=instances)
-        if self.post_process:
+        if self.post_process_seg:
             instances = self.trainer.datamodule.process_instances(instances, max_probs)
         else:
             instances.F = torch.where(max_probs >= 0.5, instances.F, -1)
@@ -385,8 +391,9 @@ class FullNet(pl.LightningModule):
         
         clusters = instances[x.cache['instseg_downsample_idxs']]
         _, classes = self.identify_model(features.batch(0), clusters)
-        # labels = classes.new_tensor(features=classes.F.argmax(-1))
-        labels.F = self.trainer.datamodule.teeth_classes_to_labels(classes).F
+        labels = self.trainer.datamodule.teeth_classes_to_labels(
+            classes, method='mincost' if self.post_process_labels else 'argmax',
+        )
 
         if not isinstance(preds, list):
             return instances, labels, None
@@ -428,7 +435,8 @@ class FullNet(pl.LightningModule):
         x: PointTensor,
     ) -> Tuple[PointTensor, PointTensor, PointTensor]:
         # stage 1
-        x, affine = self.align_stage(x)
+        if self.do_align:
+            x, affine = self.align_stage(x)
 
         # stage 2
         x, instances, features, labels, affine = self.instances_stage(x)

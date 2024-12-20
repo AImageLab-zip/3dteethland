@@ -10,6 +10,8 @@ import numpy as np
 import pymeshlab
 from tqdm import tqdm
 
+import teethland.data.transforms as T
+
 
 def process_scan(
     files: Tuple[Path, Path],
@@ -56,7 +58,6 @@ def process_scan(
                 continue
             cluster_idxs = np.array(list(cluster_idxs))
             centroid = inst_vertices[cluster_idxs].mean(0)
-            centroid *= 17.3281 if 'align' in mesh_file.as_posix() else 1
 
             fdis = np.concatenate((fdis, [fdi]))
             centroids = np.concatenate((centroids, [centroid]))
@@ -87,7 +88,7 @@ def remove_outliers(
     pair_offsets,
     axes: List[int]=[0, 1],
     poly_degree: int=3,
-    max_diffs: List[int]=[16, 22],  # upper, lower
+    max_diffs: List[int]=[18, 18],  # upper, lower
 ):
     reg_functions = []
     for is_arch_lower in [False, True]:
@@ -190,24 +191,61 @@ def determine_fdi_pair_distributions(
     return pair_means, pair_covs
 
 
+def align_scans(root: Path, out_dir: Path):
+    ms = pymeshlab.MeshSet()
+    instances_fn = T.InstanceCentroids()
+    align_fn = T.AlignUpForward()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for label_file in sorted(root.glob('**/*.json')):
+        with open(label_file, 'r') as f:
+            label_dict = json.load(f)
+
+        unique = np.unique(label_dict['labels'])
+
+        if np.isin(unique, [11, 21, 31, 41, 16, 26, 36, 46]).sum() < 4:
+            continue
+
+        labels = np.array(label_dict['labels'])
+        instances = np.array(label_dict['instances'])
+        
+        _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
+        labels[(counts < 100)[instances]] = 0
+        instances[(counts < 100)[instances]] = 0
+        _, instances = np.unique(instances, return_inverse=True)
+
+        ms.load_new_mesh(str(label_file.with_suffix('.ply')))
+        
+        data_dict = instances_fn(
+            points=ms.current_mesh().vertex_matrix(),
+            normals=ms.current_mesh().vertex_normal_matrix(),
+            labels=labels,
+            instances=instances,
+        )
+        data_dict = align_fn(**data_dict)
+
+        mesh = pymeshlab.Mesh(
+            data_dict['points'],
+            ms.current_mesh().face_matrix(),
+            v_normals_matrix=data_dict['normals'],
+        )
+        ms.add_mesh(mesh)
+        ms.save_current_mesh(str(out_dir / label_file.with_suffix('.ply').name))
+
+
 if __name__ == '__main__':
     # get all files from storage
     root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset')
-    mesh_files = [
-        *sorted(root.glob('align_partial/**/*.ply')),
-        *sorted(root.glob('align_full/**/*.ply')),
-    ]
-    label_files = [
-        *sorted(root.glob('complete_partial/**/*.json')),
-        *sorted(root.glob('checked_full/**/*.json')),
-    ]
+
+    align_scans(root / 'complete_full', root / 'align_gt')
+
+    mesh_files = sorted(root.glob('align_gt/**/*.ply'))
+    label_files = sorted(root.glob('complete_full/**/*.json'))
 
     # determine FDI pair distributions only on train data
-    for fold_file in ['full_fold_0.txt', 'partial_fold_0.txt']:
-        with open(fold_file, 'r') as f:
-            stems = [Path(l.strip()).stem for l in f.readlines() if l.strip()]
-        mesh_files = [f for f in mesh_files if f.stem not in stems]
-        label_files = [f for f in label_files if f.stem not in stems]
+    with open('full_fold_0.txt', 'r') as f:
+        stems = [Path(l.strip()).stem for l in f.readlines() if l.strip()]
+    mesh_files = [f for f in mesh_files if f.stem not in stems]
+    label_files = [f for f in label_files if f.stem not in stems]
     stems = set(f.stem for f in mesh_files) & set(f.stem for f in label_files)
     mesh_files = [f for f in mesh_files if f.stem in stems]
     label_files = [f for f in label_files if f.stem in stems]
