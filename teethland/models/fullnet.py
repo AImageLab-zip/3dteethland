@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import shutil
 from typing import Any, Dict, Optional, Tuple
 
 import pytorch_lightning as pl
@@ -475,11 +476,13 @@ class FullNet(pl.LightningModule):
             'labels': labels.cpu().tolist(),
         }
         
-        out_name = Path(self.trainer.datamodule.scan_file).with_suffix('.json')
+        path = Path(self.trainer.datamodule.scan_file)
         if self.out_dir.name:
-            out_file = self.out_dir / out_name.name
+            out_file = self.out_dir / path.with_suffix('.json')
         else:
-            out_file = self.trainer.datamodule.root / out_name
+            out_file = self.trainer.datamodule.root / path.with_suffix('.json')
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(self.trainer.datamodule.root / path, out_file.parent / path.name)
         with open(out_file, 'w') as f:
             json.dump(out_dict, f)
 

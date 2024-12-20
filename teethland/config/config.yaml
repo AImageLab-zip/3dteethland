@@ -18,7 +18,7 @@ model:
     stratified_downsample_ratio: 0.26
     crpe_bins: 80
     transformer_lr_ratio: 0.1
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_align_checked/checkpoints/weights-epoch=999.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_align_nopartial/checkpoints/weights-epoch=999.ckpt'
     lr: 0.001
     weight_decay: 0.0001
     epochs: 1000
@@ -43,7 +43,7 @@ model:
     checkpoint_path: 'checkpoints/instseg_train_addenda.ckpt'
     # checkpoint_path: 'checkpoints/instseg_full.ckpt'
     # checkpoint_path: 'checkpoints/instseg_ablation.ckpt'
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_instseg_nofdiloss/checkpoints/weights-epoch=599.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_instseg_noalign/checkpoints/weights-epoch=599.ckpt'
     # checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_instseg_real_partials_nofdiloss/checkpoints/weights-epoch=599.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
@@ -113,7 +113,7 @@ model:
     checkpoint_path: 'checkpoints/binseg_train_addenda.ckpt'
     # checkpoint_path: 'checkpoints/binseg_fold4.ckpt'
     # checkpoint_path: ''
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_binseg_all/checkpoints/weights-epoch=249.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_binseg_noalign/checkpoints/weights-epoch=249.ckpt'
     # checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_binseg_realpartials/checkpoints/weights-epoch=249.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
@@ -126,17 +126,17 @@ model:
     min_points: 40  # [30, 50]
     weighted_cluster: True
     weighted_average: True
-  do_align: True
+  do_align: False
   tta: True
   standardize: False
   stage2_iters: 2
   post_process_seg: True
-  post_process_labels: True
+  post_process_labels: False
 
 accumulate_grad_batches: 1  # 1 better segmentation, worse classification
 gradient_clip_norm: 35  # 10 is worse
 
-out_dir: '/home/mkaailab/Documents/IOS/partials/full_dataset/align_full'
+out_dir: '/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete_noalign'
 # out_dir: ''
 datamodule:
   root: '/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper'
@@ -147,7 +147,7 @@ datamodule:
   # root: '/mnt/diag/IOS/3dteethseg/challenge_dataset'
   # root: '/home/mkaailab/Documents/IOS/Katja Vos/AKMA'
   # root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/root'
-  root: '/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full'
+  root: '/home/mkaailab/Documents/IOS/partials/full_dataset/complete_partial'
   # root: '/home/mkaailab/Documents/IOS/partials/full_dataset/root_partial'
   landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
   regex_filter: ''
