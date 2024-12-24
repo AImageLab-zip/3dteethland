@@ -28,7 +28,6 @@ class TeethInstSegDataModule(TeethSegDataModule):
         distinguish_upper_lower: bool,
         m3_as_m2: bool,
         random_partial: bool,
-        boundary_aware: Dict[str, Union[bool, float]],
         **dm_cfg,
     ):
         super().__init__(**dm_cfg)
@@ -41,8 +40,6 @@ class TeethInstSegDataModule(TeethSegDataModule):
         )
         
         self.batch = None if batch is None else slice(*batch)
-        self.use_boundary_aware = boundary_aware.pop('use')
-        self.boundary_aware_cfg = boundary_aware
         self.distinguish_left_right = distinguish_left_right
         self.distinguish_upper_lower = distinguish_upper_lower
         self.m3_as_m2 = m3_as_m2
@@ -51,13 +48,6 @@ class TeethInstSegDataModule(TeethSegDataModule):
 
     def setup(self, stage: Optional[str]=None):
         rng = np.random.default_rng(self.seed)
-        self.default_transforms = T.Compose(
-            (
-                T.BoundaryAwareDownsample(**self.boundary_aware_cfg, rng=rng)
-                if self.use_boundary_aware else dict
-            ),
-            self.default_transforms,
-        )
 
         if stage is None or stage == 'fit':
             files = self._files('fit')
@@ -337,11 +327,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
             batch_dict['ud_downsample_idxs'],
             batch_dict['ud_downsample_count'],
         )
-        x.cache['ts_downsample_idxs'] = self.collate_downsample(
-            batch_dict['point_count'],
-            batch_dict['ba_downsample_idxs'],
-            batch_dict['ba_downsample_count'],
-        ) if self.use_boundary_aware else x.cache['cp_downsample_idxs']
+        x.cache['ts_downsample_idxs'] = x.cache['cp_downsample_idxs']
 
         # collate output points
         points = PointTensor(

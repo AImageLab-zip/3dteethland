@@ -17,13 +17,11 @@ class TeethAlignDataModule(TeethInstSegDataModule):
 
     def __init__(
         self,
-        align: Dict[str, bool],
         out_dir: Optional[Path]=None,
         **dm_cfg,
     ):
         super().__init__(**dm_cfg)
 
-        self.align_cfg = align
         self.out_dir = out_dir
 
     @property
