@@ -133,7 +133,7 @@ def remove_outliers(
 def determine_fdi_pair_distributions(
     mesh_files: List[Path],
     label_files: List[Path],
-    verbose: bool=False,
+    verbose: bool=True,
     num_processes: int=32,
 ):
     # get all tooth pair offsets from training data
@@ -238,12 +238,20 @@ if __name__ == '__main__':
 
     align_scans(root / 'complete_full', root / 'align_gt')
 
-    mesh_files = sorted(root.glob('align_gt/**/*.ply'))
-    label_files = sorted(root.glob('complete_full/**/*.json'))
+    mesh_files = [
+        *sorted(root.glob('align_partial/**/*.ply')),
+        *sorted(root.glob('align_full/**/*.ply')),
+    ]
+    label_files = [
+        *sorted(root.glob('complete_partial/**/*.json')),
+        *sorted(root.glob('complete_full/**/*.json')),
+    ]
 
     # determine FDI pair distributions only on train data
     with open('full_fold_0.txt', 'r') as f:
         stems = [Path(l.strip()).stem for l in f.readlines() if l.strip()]
+    with open('partial_fold_0.txt', 'r') as f:
+        stems += [Path(l.strip()).stem for l in f.readlines() if l.strip()]
     mesh_files = [f for f in mesh_files if f.stem not in stems]
     label_files = [f for f in label_files if f.stem not in stems]
     stems = set(f.stem for f in mesh_files) & set(f.stem for f in label_files)

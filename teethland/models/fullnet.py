@@ -397,7 +397,7 @@ class FullNet(pl.LightningModule):
         )
 
         if not isinstance(preds, list):
-            return instances, labels, None
+            return max_probs, instances, labels, None
         
         print('start landmarks')
         # apply NMS selection
@@ -434,7 +434,7 @@ class FullNet(pl.LightningModule):
     def forward(
         self,
         x: PointTensor,
-    ) -> Tuple[PointTensor, PointTensor, PointTensor]:
+    ) -> Tuple[TensorType['N', torch.float32], PointTensor, PointTensor, PointTensor]:
         # stage 1
         if self.do_align:
             x, affine = self.align_stage(x)
@@ -445,9 +445,9 @@ class FullNet(pl.LightningModule):
             return instances, labels, None
         
         # stage 3
-        instances, labels, landmarks = self.single_tooth_stage(x, instances, features, labels, affine)
+        probs, instances, labels, landmarks = self.single_tooth_stage(x, instances, features, labels, affine)
 
-        return instances.batch(0), labels.batch(0), landmarks
+        return probs, instances.batch(0), labels.batch(0), landmarks
     
     def predict_step(
         self,
@@ -459,12 +459,17 @@ class FullNet(pl.LightningModule):
         ],
         batch_idx: int,
     ):
-        instances, classes, landmarks = self(batch)
+        probs, instances, classes, landmarks = self(batch)
 
-        self.save_segmentation(instances, classes)
+        self.save_segmentation(probs, instances, classes)
         self.save_landmarks(landmarks)
 
-    def save_segmentation(self, instances: PointTensor, labels: PointTensor):
+    def save_segmentation(
+        self,
+        probs: TensorType['N', torch.float32],
+        instances: PointTensor,
+        labels: PointTensor,
+    ):
         if torch.any(instances.F >= 0):
             labels = torch.where(instances.F >= 0, labels.F[instances.F], 0)
         else:
@@ -474,6 +479,7 @@ class FullNet(pl.LightningModule):
         out_dict = {
             'instances': instances.cpu().tolist(),
             'labels': labels.cpu().tolist(),
+            'confidences': probs.cpu().tolist(),
         }
         
         path = Path(self.trainer.datamodule.scan_file)

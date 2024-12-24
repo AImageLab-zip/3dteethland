@@ -1,5 +1,5 @@
 work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: china_instseg_realpartials
+version: china_align_nopartial_0
 seed: 0
 
 model:
@@ -19,6 +19,7 @@ model:
     crpe_bins: 80
     transformer_lr_ratio: 0.1
     checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_align_nopartial/checkpoints/weights-epoch=999.ckpt'
+    checkpoint_path: 'checkpoints/china_align_all.ckpt'
     lr: 0.001
     weight_decay: 0.0001
     epochs: 1000
@@ -45,6 +46,7 @@ model:
     # checkpoint_path: 'checkpoints/instseg_ablation.ckpt'
     checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_instseg_noalign/checkpoints/weights-epoch=599.ckpt'
     # checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_instseg_real_partials_nofdiloss/checkpoints/weights-epoch=599.ckpt'
+    checkpoint_path: 'checkpoints/china_instseg_complete.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 600  # overfitting after 600
@@ -115,6 +117,7 @@ model:
     # checkpoint_path: ''
     checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_binseg_noalign/checkpoints/weights-epoch=249.ckpt'
     # checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_binseg_realpartials/checkpoints/weights-epoch=249.ckpt'
+    checkpoint_path: 'checkpoints/china_binseg_complete.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 250
@@ -126,17 +129,17 @@ model:
     min_points: 40  # [30, 50]
     weighted_cluster: True
     weighted_average: True
-  do_align: False
+  do_align: True
   tta: True
   standardize: False
   stage2_iters: 2
   post_process_seg: True
-  post_process_labels: False
+  post_process_labels: True
 
 accumulate_grad_batches: 1  # 1 better segmentation, worse classification
 gradient_clip_norm: 35  # 10 is worse
 
-out_dir: '/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete_noalign'
+out_dir: '/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete_all'
 # out_dir: ''
 datamodule:
   root: '/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper'
@@ -147,13 +150,13 @@ datamodule:
   # root: '/mnt/diag/IOS/3dteethseg/challenge_dataset'
   # root: '/home/mkaailab/Documents/IOS/Katja Vos/AKMA'
   # root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/root'
-  root: '/home/mkaailab/Documents/IOS/partials/full_dataset/complete_partial'
+  root: '/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full'
   # root: '/home/mkaailab/Documents/IOS/partials/full_dataset/root_partial'
   landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
   regex_filter: ''
   extensions: ['ply', 'stl', 'obj']
   # fold: 0
-  fold: 'partial_fold_0.txt'
+  fold: 'full_fold_0.txt'
   norm: True
   clean: True  # TODO: Set to true for Grand Challenge inference
   val_size: 0.2
@@ -164,14 +167,7 @@ datamodule:
   num_workers: 4
   pin_memory: True
   persistent_workers: True
-  uniform_density_voxel_size: [0.025, 0.01]  # instseg, landmarks
-  boundary_aware:
-    use: False
-    voxel_size: 0.01
-    sample_ratio: 0.25
-  align:
-    do_translation: True
-    do_partial: True
+  uniform_density_voxel_size: [0.025, 0.01]  # instseg, single-tooth
   proposal_points: 10000
   max_proposals: 8
   m3_as_m2: False

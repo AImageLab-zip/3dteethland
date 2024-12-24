@@ -25,11 +25,11 @@ def determine_seqence(centroids):
 
 if __name__ == '__main__':
     mesh_root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/align_full')
-    labels_root = mesh_root.parent / 'root_full'
+    labels_root = mesh_root.parent / 'complete_full'
 
     ms = pymeshlab.MeshSet()
 
-    t = tqdm(sorted(mesh_root.glob('*')))
+    t = tqdm(sorted(mesh_root.glob('**/*.ply')))
     for mesh_file in t:
         t.set_description(mesh_file.name)
         ms.load_new_mesh(str(mesh_file))

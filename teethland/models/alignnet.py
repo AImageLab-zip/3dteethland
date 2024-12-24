@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -53,6 +53,7 @@ class AlignNet(pl.LightningModule):
         TensorType[3, torch.float32],
         TensorType[3, torch.float32],
         TensorType[3, torch.float32],
+        Optional[PointTensor],
     ]:
         out = self.backbone(x)
         encoding = out[0] if self.do_seg else out

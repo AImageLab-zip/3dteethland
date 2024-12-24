@@ -159,21 +159,24 @@ def check_predictions():
     root = Path('/home/mkaailab/Documents/IOS/Katja VOs/transfer_2892173_files_6b1a93dd')
     # root = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
     root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_partial')
+    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full')
     # root = Path('/home/mkaailab/Documents/CBCT/fusion/complete_cadavers/IOS scans')
     # root = Path('/home/mkaailab/Documents/IOS/Katja Vos/AKMA')
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test')
     mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('**/*.ply')) + list(root.glob('**/*.stl')))
     # root = root.parent / 'last_case'
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_realpartials')
+    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full')
     ann_files = sorted(root.glob('**/*er.json'))
     # ann_files = sorted(root.glob('**/*er.json'))
     clean = False
 
+    # with open('failures.txt', 'r') as f:
+    #     stems = [l.strip() for l in f.readlines() if l.strip()]
+
     start_idx = 0
     # files = mesh_files[start_idx:]
-    for i, ann_file in enumerate(ann_files[30:]):
+    for i, ann_file in enumerate(ann_files):
         # mesh_file = sorted(root.glob(f'{ann_file.name.split("_")[0]}/{ann_file.stem}*'))[-1]
         # mesh_file = root.parent / 'cases' / ann_file.stem.split('_')[0] / f'{ann_file.stem}.ply'
         # ann_file = Path(f'dentalnetPr/{mesh_file.stem}.json')
@@ -185,9 +188,9 @@ def check_predictions():
         # ann_file = mesh_file.with_suffix('.json')
         # print(i, ':', mesh_file.stem, ann_file)
 
-        # if not mesh_file.stem == '20221229_lower':
-        #     ann_file = Path('output/TVSR5QBQ_lower.json')
-        #     continue
+        if mesh_file.stem not in ['20221022_full_lower']:
+            ann_file = Path('output/TVSR5QBQ_lower.json')
+            continue
 
         # draw_instances(mesh_file, ann_file)
         # draw_proposal(mesh_file, ann_file)

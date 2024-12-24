@@ -117,9 +117,11 @@ class TeethSegDataModule(pl.LightningDataModule):
             with open(self.root / case_files[1], 'rb') as f:
                 annotation = json.load(f)
 
-            subject = re.split('_|-', case_files[0].stem)[0]            
+            subject = '_'.join(re.split('_|-', case_files[0].stem)[:-1])
             labels = np.array(annotation['labels'])
-            _, instances, counts = np.unique(labels, return_inverse=True, return_counts=True)
+            _, instances, counts = np.unique(
+                annotation['instances'], return_inverse=True, return_counts=True,
+            )
             labels[(counts < 100)[instances]] = 0
             labels = np.unique(labels)
 
@@ -144,7 +146,7 @@ class TeethSegDataModule(pl.LightningDataModule):
 
         # write folds to storage for documentation
         for i, (_, fold_idxs) in enumerate(splits):
-            with open(f'partial_fold_{i}.txt', 'w') as f:
+            with open(f'full_fold_{i}.txt', 'w') as f:
                 for subject_idx in fold_idxs:
                     for fs in subject_files[subject_idx]:
                         f.write(fs[0].name + '\n')

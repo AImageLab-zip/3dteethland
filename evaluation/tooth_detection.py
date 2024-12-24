@@ -12,12 +12,89 @@ from tqdm import tqdm
 from teethland.visualization import palette
 
 
+def determine_optimal_threshold(pred_files, gt_files):
+    preds, gts = [], []
+    for pred_filename in tqdm(pred_files):        
+        with open(pred_filename, 'r') as f:
+            pred_label_dict = json.load(f)
+        pred_label_dict['instances'] = (np.array(pred_label_dict['instances']) + 1).tolist()
+        instances = np.array(pred_label_dict['instances'])
+        if 'confidences' not in pred_label_dict:
+            pred_label_dict['confidences'] = np.ones_like(instances).tolist()
+        pred_label_dict['confidences'] = np.array(pred_label_dict['confidences'])
+        pred_point_idxs, pred_probs = [], []
+        for label in np.unique(instances)[1:]:
+            point_idxs = np.nonzero(instances == label)[0]
+            pred_point_idxs.append(set(point_idxs.tolist()))
+            pred_probs.append(pred_label_dict['confidences'][instances == label].mean())
+        
+        # load ground-truth segmentations
+        gt_filename = [f for f in gt_files if f.name == pred_filename.name][0]
+        with open(gt_filename, 'r') as f:
+            gt_label_dict = json.load(f)
+
+        labels = np.array(gt_label_dict['labels'])
+        instances = np.array(gt_label_dict['instances'])
+        
+        _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
+        labels[(counts < 100)[instances]] = 0
+        instances[(counts < 100)[instances]] = 0
+        _, instances = np.unique(instances, return_inverse=True)
+        
+        gt_label_dict['labels'] = labels.tolist()
+        gt_label_dict['instances'] = instances.tolist()
+        
+        gt_point_idxs = []
+        for label in np.unique(instances)[1:]:
+            point_idxs = np.nonzero(instances == label)[0]
+            gt_point_idxs.append(set(point_idxs.tolist()))
+        
+        ious = np.zeros((max(gt_label_dict['instances']), max(pred_label_dict['instances'])))
+        for i in range(max(gt_label_dict['instances'])):
+            for j in range(max(pred_label_dict['instances'])):
+                inter = len(gt_point_idxs[i] & pred_point_idxs[j])
+                union = len(gt_point_idxs[i] | pred_point_idxs[j])
+                iou = inter / union
+                ious[i, j] = iou
+
+        is_matched = np.max(ious, axis=0) >= 0.5
+        preds.extend(pred_probs)
+        gts.extend(is_matched)
+
+    preds = np.array(preds)
+    gts = np.array(gts)
+    threshs = np.unique(preds)
+    f1s = []
+    for thresh in threshs:
+        tp = ((preds >= thresh) & gts).sum()
+        fp = ((preds >= thresh) & ~gts).sum()
+        fn = ((preds < thresh) & gts).sum()
+        f1 = 2 * tp / (2 * tp + fp + fn)
+        f1s.append(f1)
+
+    return threshs[np.argmax(f1s)]
+
+
 def process_scan(
     pred_label_dict,
     gt_label_dict,
+    score_thresh: float=0.8,
     iou_thresh: float=0.5,
     min_points: int=100,
 ):
+    pred_instances = np.array(pred_label_dict['instances'])
+    if 'confidences' not in pred_label_dict:
+        pred_label_dict['confidences'] = np.ones_like(instances).tolist()
+    pred_confidences = np.array(pred_label_dict['confidences'])
+    pred_probs = []
+    for label in np.unique(pred_instances):
+        pred_probs.append(pred_confidences[pred_instances == label].mean())
+
+    keep_points = (np.array(pred_probs) >= score_thresh)[pred_instances]
+    pred_label_dict['instances'] = np.where(keep_points, pred_instances, 0)
+    pred_label_dict['instances'] = np.unique(pred_label_dict['instances'], return_inverse=True)[1].tolist()
+    pred_label_dict['labels'] = np.where(keep_points, pred_label_dict['labels'], 0)
+    
     pred_instances = np.array(pred_label_dict['instances'])
     pred_point_idxs = []
     for label in np.unique(pred_instances)[1:]:
@@ -63,6 +140,9 @@ def process_scan(
     gt_points = gt_label_dict['labels']
     pred_points = pred_label_dict['labels']
 
+    gt_labels = np.array(gt_labels)
+    pred_labels = np.array(pred_labels)
+
     return tps, fps, fns, tooth_dices, gt_labels, pred_labels, gt_points, pred_points
 
 
@@ -72,7 +152,7 @@ if __name__ == "__main__":
     gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
     gt_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full')
     #pred_dir = Path('mixed_ios_standardized')
-    pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete')
+    pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_full_nopostlabels')
     TLA, TSA, TIR = [], [], []
     verbose = False
 
@@ -83,8 +163,10 @@ if __name__ == "__main__":
     }
 
     gt_files = sorted(gt_dir.glob('**/*.json'))
+    pred_files = sorted(pred_dir.glob('*_full/*.json'))
+    
+    thresh = determine_optimal_threshold(pred_files, gt_files)
 
-    pred_files = sorted(pred_dir.glob('*'))
     fail_files = []
     i = 0
     for pred_filename in tqdm(pred_files):        
@@ -108,16 +190,16 @@ if __name__ == "__main__":
         gt_label_dict['labels'] = labels.tolist()
         gt_label_dict['instances'] = instances.tolist()
 
-        tps, fps, fns, tooth_dices, gt_labels, pred_labels, gt_points, pred_points = process_scan(pred_label_dict, gt_label_dict)
+        tps, fps, fns, tooth_dices, gt_labels, pred_labels, gt_points, pred_points = process_scan(pred_label_dict, gt_label_dict, thresh)
         # if False:
-        if fps or fns:
+        if fps or fns or not np.all(gt_labels == pred_labels):
             fail_files.append(i)
             _, counts = np.unique(pred_label_dict['instances'], return_counts=True)
-            print(pred_filename, fps, fns, tps, counts)
+            print(pred_filename, 'fp', fps, 'fn', fns, 'label', np.sum(gt_labels != pred_labels))
 
             
         if verbose and (fps or fns):
-            mesh_file = gt_filename.with_suffix('.obj')
+            mesh_file = gt_filename.with_suffix('.ply')
 
             ms = pymeshlab.MeshSet()
             ms.load_new_mesh(str(mesh_file))
@@ -166,12 +248,12 @@ if __name__ == "__main__":
 
     upper_mask = np.isin(gt_labels // 10, np.array([1, 2, 5, 6]))
 
-    cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[upper_mask], pred_labels[upper_mask])
-    cmd.plot(include_values=False)
-    plt.show(block=True)
+    # cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[upper_mask], pred_labels[upper_mask])
+    # cmd.plot(include_values=False)
+    # plt.show(block=True)
     
-    cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[~upper_mask], pred_labels[~upper_mask])
-    cmd.plot(include_values=False)
-    plt.show(block=True)
+    # cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[~upper_mask], pred_labels[~upper_mask])
+    # cmd.plot(include_values=False)
+    # plt.show(block=True)
 
     k = 3

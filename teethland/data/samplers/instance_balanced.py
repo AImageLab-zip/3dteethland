@@ -19,7 +19,9 @@ class InstanceBalancedSampler(WeightedRandomSampler):
                 annotation = json.load(f)
 
             labels = np.array(annotation['labels'])
-            _, instances, counts = np.unique(labels, return_inverse=True, return_counts=True)
+            _, instances, counts = np.unique(
+                annotation['instances'], return_inverse=True, return_counts=True,
+            )
             labels[(counts < 100)[instances]] = 0
             labels = np.unique(labels)
 
