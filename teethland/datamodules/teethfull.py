@@ -147,9 +147,9 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
 
         # remove small instances
         _, counts = torch.unique(instances.F, return_counts=True)
-        out[(counts < 100)[instances.F + 1]] = -1
+        out[(counts < 30)[instances.F + 1]] = -1
 
-        if torch.amin(counts) < 100:
+        if torch.amin(counts) < 30:
             print('end', counts.amin())
 
         return out

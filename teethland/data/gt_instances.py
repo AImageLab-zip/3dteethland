@@ -209,8 +209,8 @@ def align_scans(root: Path, out_dir: Path):
         instances = np.array(label_dict['instances'])
         
         _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
-        labels[(counts < 100)[instances]] = 0
-        instances[(counts < 100)[instances]] = 0
+        labels[(counts < 30)[instances]] = 0
+        instances[(counts < 30)[instances]] = 0
         _, instances = np.unique(instances, return_inverse=True)
 
         ms.load_new_mesh(str(label_file.with_suffix('.ply')))

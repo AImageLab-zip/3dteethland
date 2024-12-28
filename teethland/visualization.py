@@ -159,14 +159,14 @@ def check_predictions():
     root = Path('/home/mkaailab/Documents/IOS/Katja VOs/transfer_2892173_files_6b1a93dd')
     # root = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
     root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full')
+    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_partial')
     # root = Path('/home/mkaailab/Documents/CBCT/fusion/complete_cadavers/IOS scans')
     # root = Path('/home/mkaailab/Documents/IOS/Katja Vos/AKMA')
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test')
     mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('**/*.ply')) + list(root.glob('**/*.stl')))
     # root = root.parent / 'last_case'
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full')
+    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_partial')
     ann_files = sorted(root.glob('**/*er.json'))
     # ann_files = sorted(root.glob('**/*er.json'))
     clean = False
@@ -188,7 +188,7 @@ def check_predictions():
         # ann_file = mesh_file.with_suffix('.json')
         # print(i, ':', mesh_file.stem, ann_file)
 
-        if mesh_file.stem not in ['20221022_full_lower']:
+        if mesh_file.stem not in ['20223602_partial_upper']:
             ann_file = Path('output/TVSR5QBQ_lower.json')
             continue
 

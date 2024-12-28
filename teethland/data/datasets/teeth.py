@@ -79,13 +79,13 @@ class TeethSegDataset(MeshDataset):
         instances = np.array(annotation['instances'])
         
         _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
-        labels[(counts < 100)[instances]] = 0
-        instances[(counts < 100)[instances]] = 0
+        labels[(counts < 30)[instances]] = 0
+        instances[(counts < 30)[instances]] = 0
         _, instances = np.unique(instances, return_inverse=True)
 
         if labels.sum() != sum(annotation['labels']):
             removed_labels = set(annotation['labels']) - set(labels.tolist())
-            print(file, 'removed', removed_labels)
+            print(file, 'counts', np.sort(counts), 'removed', removed_labels)
 
         return {
             **(

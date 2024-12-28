@@ -1,5 +1,5 @@
 work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: china_align_nopartial_0
+version: china_instseg_complete_0
 seed: 0
 
 model:
@@ -18,8 +18,8 @@ model:
     stratified_downsample_ratio: 0.26
     crpe_bins: 80
     transformer_lr_ratio: 0.1
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_align_nopartial/checkpoints/weights-epoch=999.ckpt'
-    checkpoint_path: 'checkpoints/china_align_all.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/china_align_all_1/checkpoints/weights-epoch=999.ckpt'
+    # checkpoint_path: 'checkpoints/china_align_all.ckpt'
     lr: 0.001
     weight_decay: 0.0001
     epochs: 1000
@@ -139,7 +139,7 @@ model:
 accumulate_grad_batches: 1  # 1 better segmentation, worse classification
 gradient_clip_norm: 35  # 10 is worse
 
-out_dir: '/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete_all'
+out_dir: '/home/mkaailab/Documents/IOS/partials/full_dataset/align_complete_all_1'
 # out_dir: ''
 datamodule:
   root: '/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper'
@@ -150,15 +150,15 @@ datamodule:
   # root: '/mnt/diag/IOS/3dteethseg/challenge_dataset'
   # root: '/home/mkaailab/Documents/IOS/Katja Vos/AKMA'
   # root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/root'
-  root: '/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full'
+  root: '/home/mkaailab/Documents/IOS/partials/full_dataset/align_complete_all_0'
   # root: '/home/mkaailab/Documents/IOS/partials/full_dataset/root_partial'
   landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
   regex_filter: ''
   extensions: ['ply', 'stl', 'obj']
   # fold: 0
-  fold: 'full_fold_0.txt'
-  norm: True
-  clean: True  # TODO: Set to true for Grand Challenge inference
+  fold: 'complete_fold_0.txt'
+  norm: False
+  clean: False  # TODO: Set to true for Grand Challenge inference
   val_size: 0.2
   include_val_as_train: false
   sampler: 'balanced'  # 'default' or 'balanced'
@@ -172,5 +172,5 @@ datamodule:
   max_proposals: 8
   m3_as_m2: False
   distinguish_left_right: true
-  random_partial: False
+  random_partial: True
   distinguish_upper_lower: false  # True worse

@@ -122,7 +122,7 @@ class TeethSegDataModule(pl.LightningDataModule):
             _, instances, counts = np.unique(
                 annotation['instances'], return_inverse=True, return_counts=True,
             )
-            labels[(counts < 100)[instances]] = 0
+            labels[(counts < 30)[instances]] = 0
             labels = np.unique(labels)
 
             subject_idx = subject_idxs.setdefault(subject, len(subject_idxs))

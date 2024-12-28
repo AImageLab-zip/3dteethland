@@ -960,7 +960,7 @@ class RandomPartial:
         self,
         rng: Optional[np.random.Generator],
         count_range: Tuple[int, int]=(2, 12),
-        keep_radius: float=0.5,
+        keep_radius: float=0.40,  # approximatly 14mm teeth
         p: float=0.9,
         skew: float=-0.9,
         min_points: int=0,
@@ -1023,7 +1023,7 @@ class RandomPartial:
         tooth_coord,
     ):    
         # get vertex mask and triangles
-        inside_triangles = triangles[np.any(mask[triangles], axis=-1)]
+        inside_triangles = triangles[np.all(mask[triangles], axis=-1)]
         
         vertex_mask = np.zeros_like(mask)
         vertex_mask[inside_triangles.flatten()] = True
@@ -1131,6 +1131,7 @@ class RandomPartial:
             f'    range={self.range},',
             f'    keep_radius={self.keep_radius},',
             f'    p={self.p},',
+            f'    min_points={self.min_points},',
             f'    do_translate={self.do_translate},',
             f'    do_planes={self.do_planes},',
             f'    probs={self.probs},',
