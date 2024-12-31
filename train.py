@@ -96,6 +96,7 @@ def main(stage: str, devices: int, checkpoint: str):
         devices=devices,
         max_epochs=config['model'][stage]['epochs'],
         logger=logger,
+        sync_batchnorm=devices > 1,
         accumulate_grad_batches=config['accumulate_grad_batches'],
         gradient_clip_val=config['gradient_clip_norm'],
         callbacks=[
