@@ -5,12 +5,9 @@ from pathlib import Path
 from typing import List, Tuple
 
 import matplotlib.pyplot as plt
-import networkx
 import numpy as np
 import pymeshlab
 from tqdm import tqdm
-
-import teethland.data.transforms as T
 
 
 def process_scan(
@@ -27,7 +24,6 @@ def process_scan(
     ms = pymeshlab.MeshSet()
     ms.load_new_mesh(str(mesh_file))
     vertices = ms.current_mesh().vertex_matrix()
-    triangles = ms.current_mesh().face_matrix()
 
     fdis = np.zeros(0, dtype=int)
     centroids = np.zeros((0, 3))
@@ -38,29 +34,10 @@ def process_scan(
         fdi -= 2 if (fdi % 20) >= 10 else 0
         fdi -= 4 if fdi >= 20 else 0
 
-        inst_triangles = triangles[np.any(inst_mask[triangles], axis=-1)]        
-        vertex_mask = np.zeros_like(inst_mask)
-        vertex_mask[inst_triangles.flatten()] = True
-        inst_vertices = vertices[vertex_mask]
-        
-        vertex_map = np.full((vertices.shape[0],), -1)
-        vertex_map[vertex_mask] = np.arange(vertex_mask.sum())
-        inst_triangles = vertex_map[inst_triangles]
-        inst_edges = np.concatenate((
-            inst_triangles[:, [0, 1]],
-            inst_triangles[:, [0, 2]],
-            inst_triangles[:, [1, 2]],
-        ))
+        centroid = vertices[inst_mask].mean(0)
 
-        G = networkx.Graph(list(inst_edges))
-        for cluster_idxs in networkx.connected_components(G):
-            if len(cluster_idxs) < min_cluster_size:
-                continue
-            cluster_idxs = np.array(list(cluster_idxs))
-            centroid = inst_vertices[cluster_idxs].mean(0)
-
-            fdis = np.concatenate((fdis, [fdi]))
-            centroids = np.concatenate((centroids, [centroid]))
+        fdis = np.concatenate((fdis, [fdi]))
+        centroids = np.concatenate((centroids, [centroid]))
 
     # determine tooth pair offsets
     pair_offsets = defaultdict(list)
@@ -133,7 +110,7 @@ def remove_outliers(
 def determine_fdi_pair_distributions(
     mesh_files: List[Path],
     label_files: List[Path],
-    verbose: bool=True,
+    verbose: bool=False,
     num_processes: int=32,
 ):
     # get all tooth pair offsets from training data
@@ -147,20 +124,12 @@ def determine_fdi_pair_distributions(
     # remove offsets between incorrect annotations
     pair_offsets = remove_outliers(pair_offsets)
 
-    # copy same-tooth instances to have samples for each FDI pair
-    upper_same_offsets = np.concatenate([pair_offsets[i, i] for i in range(16)])
-    for i in range(16):
-        pair_offsets[i, i] = upper_same_offsets
-    lower_same_offsets = np.concatenate([pair_offsets[i, i] for i in range(16, 32)])
-    for i in range(16, 32):
-        pair_offsets[i, i] = lower_same_offsets
-
     # model offsets per FDI pair as multi-variate Gaussian
     pair_means = np.zeros((32, 32, 3))
-    pair_covs = np.zeros((32, 32, 3, 3))
+    pair_covs = np.tile(np.eye(3)[None, None], (32, 32, 1, 1))
     for fdi1 in range(32):
         for fdi2 in range(32):
-            if fdi1 // 16 != fdi2 // 16:
+            if fdi1 == fdi2 or fdi1 // 16 != fdi2 // 16:
                 continue
 
             offsets = pair_offsets[fdi1, fdi2]
@@ -191,56 +160,13 @@ def determine_fdi_pair_distributions(
     return pair_means, pair_covs
 
 
-def align_scans(root: Path, out_dir: Path):
-    ms = pymeshlab.MeshSet()
-    instances_fn = T.InstanceCentroids()
-    align_fn = T.AlignUpForward()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for label_file in sorted(root.glob('**/*.json')):
-        with open(label_file, 'r') as f:
-            label_dict = json.load(f)
-
-        unique = np.unique(label_dict['labels'])
-
-        if np.isin(unique, [11, 21, 31, 41, 16, 26, 36, 46]).sum() < 4:
-            continue
-
-        labels = np.array(label_dict['labels'])
-        instances = np.array(label_dict['instances'])
-        
-        _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
-        labels[(counts < 30)[instances]] = 0
-        instances[(counts < 30)[instances]] = 0
-        _, instances = np.unique(instances, return_inverse=True)
-
-        ms.load_new_mesh(str(label_file.with_suffix('.ply')))
-        
-        data_dict = instances_fn(
-            points=ms.current_mesh().vertex_matrix(),
-            normals=ms.current_mesh().vertex_normal_matrix(),
-            labels=labels,
-            instances=instances,
-        )
-        data_dict = align_fn(**data_dict)
-
-        mesh = pymeshlab.Mesh(
-            data_dict['points'],
-            ms.current_mesh().face_matrix(),
-            v_normals_matrix=data_dict['normals'],
-        )
-        ms.add_mesh(mesh)
-        ms.save_current_mesh(str(out_dir / label_file.with_suffix('.ply').name))
-
-
 if __name__ == '__main__':
     # get all files from storage
     root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset')
 
-    align_scans(root / 'complete_full', root / 'align_gt')
-
     mesh_files = [
-        *sorted(root.glob('align_partial/**/*.ply')),
-        *sorted(root.glob('align_full/**/*.ply')),
+        *sorted(root.glob('result_complete/**/*partial*.ply')),
+        *sorted(root.glob('result_complete/**/*full*.ply'))
     ]
     label_files = [
         *sorted(root.glob('complete_partial/**/*.json')),
@@ -248,12 +174,12 @@ if __name__ == '__main__':
     ]
 
     # determine FDI pair distributions only on train data
-    with open('full_fold_0.txt', 'r') as f:
-        stems = [Path(l.strip()).stem for l in f.readlines() if l.strip()]
-    with open('partial_fold_0.txt', 'r') as f:
-        stems += [Path(l.strip()).stem for l in f.readlines() if l.strip()]
-    mesh_files = [f for f in mesh_files if f.stem not in stems]
-    label_files = [f for f in label_files if f.stem not in stems]
+    # with open('full_fold_0.txt', 'r') as f:
+    #     stems = [Path(l.strip()).stem for l in f.readlines() if l.strip()]
+    # with open('partial_fold_0.txt', 'r') as f:
+    #     stems += [Path(l.strip()).stem for l in f.readlines() if l.strip()]
+    # mesh_files = [f for f in mesh_files if f.stem not in stems]
+    # label_files = [f for f in label_files if f.stem not in stems]
     stems = set(f.stem for f in mesh_files) & set(f.stem for f in label_files)
     mesh_files = [f for f in mesh_files if f.stem in stems]
     label_files = [f for f in label_files if f.stem in stems]

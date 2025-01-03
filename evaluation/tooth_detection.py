@@ -1,78 +1,9 @@
 import json
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
-import open3d
-import pymeshlab
 from sklearn.metrics import ConfusionMatrixDisplay, f1_score, jaccard_score
 from tqdm import tqdm
-
-
-from teethland.visualization import palette
-
-
-def determine_optimal_threshold(pred_files, gt_files):
-    preds, gts = [], []
-    for pred_filename in tqdm(pred_files):        
-        with open(pred_filename, 'r') as f:
-            pred_label_dict = json.load(f)
-        pred_label_dict['instances'] = (np.array(pred_label_dict['instances']) + 1).tolist()
-        instances = np.array(pred_label_dict['instances'])
-        if 'confidences' not in pred_label_dict:
-            pred_label_dict['confidences'] = np.ones_like(instances).tolist()
-        pred_label_dict['confidences'] = np.array(pred_label_dict['confidences'])
-        pred_point_idxs, pred_probs = [], []
-        for label in np.unique(instances)[1:]:
-            point_idxs = np.nonzero(instances == label)[0]
-            pred_point_idxs.append(set(point_idxs.tolist()))
-            pred_probs.append(pred_label_dict['confidences'][instances == label].mean())
-        
-        # load ground-truth segmentations
-        gt_filename = [f for f in gt_files if f.name == pred_filename.name][0]
-        with open(gt_filename, 'r') as f:
-            gt_label_dict = json.load(f)
-
-        labels = np.array(gt_label_dict['labels'])
-        instances = np.array(gt_label_dict['instances'])
-        
-        _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
-        labels[(counts < 100)[instances]] = 0
-        instances[(counts < 100)[instances]] = 0
-        _, instances = np.unique(instances, return_inverse=True)
-        
-        gt_label_dict['labels'] = labels.tolist()
-        gt_label_dict['instances'] = instances.tolist()
-        
-        gt_point_idxs = []
-        for label in np.unique(instances)[1:]:
-            point_idxs = np.nonzero(instances == label)[0]
-            gt_point_idxs.append(set(point_idxs.tolist()))
-        
-        ious = np.zeros((max(gt_label_dict['instances']), max(pred_label_dict['instances'])))
-        for i in range(max(gt_label_dict['instances'])):
-            for j in range(max(pred_label_dict['instances'])):
-                inter = len(gt_point_idxs[i] & pred_point_idxs[j])
-                union = len(gt_point_idxs[i] | pred_point_idxs[j])
-                iou = inter / union
-                ious[i, j] = iou
-
-        is_matched = np.max(ious, axis=0) >= 0.5
-        preds.extend(pred_probs)
-        gts.extend(is_matched)
-
-    preds = np.array(preds)
-    gts = np.array(gts)
-    threshs = np.unique(preds)
-    f1s = []
-    for thresh in threshs:
-        tp = ((preds >= thresh) & gts).sum()
-        fp = ((preds >= thresh) & ~gts).sum()
-        fn = ((preds < thresh) & gts).sum()
-        f1 = 2 * tp / (2 * tp + fp + fn)
-        f1s.append(f1)
-
-    return threshs[np.argmax(f1s)]
 
 
 def process_scan(
@@ -80,7 +11,6 @@ def process_scan(
     gt_label_dict,
     score_thresh: float=0.8,
     iou_thresh: float=0.5,
-    min_points: int=100,
 ):
     pred_instances = np.array(pred_label_dict['instances'])
     if 'confidences' not in pred_label_dict:
@@ -101,14 +31,7 @@ def process_scan(
         point_idxs = np.nonzero(pred_instances == label)[0]
         pred_point_idxs.append(set(point_idxs.tolist()))
 
-    gt_labels = np.array(gt_label_dict['labels'])
     gt_instances = np.array(gt_label_dict['instances'])
-    _, gt_instances, counts = np.unique(gt_instances, return_inverse=True, return_counts=True)
-    gt_labels[(counts < min_points)[gt_instances]] = 0
-    gt_instances[(counts < min_points)[gt_instances]] = 0
-    _, gt_instances = np.unique(gt_instances, return_inverse=True)
-    gt_label_dict['labels'] = gt_labels.tolist()
-    gt_label_dict['instances'] = gt_instances.tolist()
 
     gt_point_idxs = []
     for label in np.unique(gt_instances)[1:]:
@@ -150,9 +73,9 @@ def process_scan(
 if __name__ == "__main__":
     gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
-    gt_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full')
+    gt_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_partial')
     #pred_dir = Path('mixed_ios_standardized')
-    pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_full_nopostlabels')
+    pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete')
     TLA, TSA, TIR = [], [], []
     verbose = False
 
@@ -163,61 +86,39 @@ if __name__ == "__main__":
     }
 
     gt_files = sorted(gt_dir.glob('**/*.json'))
-    pred_files = sorted(pred_dir.glob('*_full/*.json'))
+    pred_files = sorted(pred_dir.glob('**/*.json'))
+    stems = set([f.stem for f in gt_files]) & set([f.stem for f in pred_files])
+    gt_files = [f for f in gt_files if f.stem in stems]
+    pred_files = [f for f in pred_files if f.stem in stems]
     
-    thresh = determine_optimal_threshold(pred_files, gt_files)
+    # thresh = determine_optimal_threshold(pred_files, gt_files)
+    thresh = 0.0
 
-    fail_files = []
+    failures = []
     i = 0
     for pred_filename in tqdm(pred_files):        
         with open(pred_filename, 'r') as f:
             pred_label_dict = json.load(f)
-        pred_label_dict['instances'] = (np.array(pred_label_dict['instances']) + 1).tolist()
+        labels = np.array(pred_label_dict['labels'])
+        instances = np.array(pred_label_dict['instances'])
+        
+        _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
+        labels[(counts < 30)[instances]] = 0
+        instances[(counts < 30)[instances]] = 0
+        _, instances = np.unique(instances, return_inverse=True)
+        
+        pred_label_dict['labels'] = labels.tolist()
+        pred_label_dict['instances'] = instances.tolist()
 
         # load ground-truth segmentations
         gt_filename = [f for f in gt_files if f.name == pred_filename.name][0]
         with open(gt_filename, 'r') as f:
             gt_label_dict = json.load(f)
 
-        labels = np.array(gt_label_dict['labels'])
-        instances = np.array(gt_label_dict['instances'])
-        
-        _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
-        labels[(counts < 100)[instances]] = 0
-        instances[(counts < 100)[instances]] = 0
-        _, instances = np.unique(instances, return_inverse=True)
-        
-        gt_label_dict['labels'] = labels.tolist()
-        gt_label_dict['instances'] = instances.tolist()
-
         tps, fps, fns, tooth_dices, gt_labels, pred_labels, gt_points, pred_points = process_scan(pred_label_dict, gt_label_dict, thresh)
         # if False:
         if fps or fns or not np.all(gt_labels == pred_labels):
-            fail_files.append(i)
-            _, counts = np.unique(pred_label_dict['instances'], return_counts=True)
-            print(pred_filename, 'fp', fps, 'fn', fns, 'label', np.sum(gt_labels != pred_labels))
-
-            
-        if verbose and (fps or fns):
-            mesh_file = gt_filename.with_suffix('.ply')
-
-            ms = pymeshlab.MeshSet()
-            ms.load_new_mesh(str(mesh_file))
-            mesh = ms.current_mesh()
-            mesh.compact()
-
-            vertices = mesh.vertex_matrix()
-            triangles = mesh.face_matrix()
-
-            mesh = open3d.geometry.TriangleMesh(
-                vertices=open3d.utility.Vector3dVector(vertices),
-                triangles=open3d.utility.Vector3iVector(triangles),
-            )
-            mesh.compute_vertex_normals()
-            _, instances = np.unique(pred_label_dict['labels'], return_inverse=True)
-            mesh.vertex_colors = open3d.utility.Vector3dVector(palette[instances] / 255)
-
-            open3d.visualization.draw_geometries([mesh], width=1600, height=900)
+            failures.append((pred_filename, fps, fns, np.sum(gt_labels != pred_labels)))
             
         i += 1
         stats['tps'].append(tps)
@@ -242,9 +143,10 @@ if __name__ == "__main__":
     macro_iou = jaccard_score(stats['gt_points'], stats['pred_points'], labels=np.unique(stats['gt_points'])[1:], average='macro')
     print('macro-IoU:', macro_iou)
 
-    with open('failures.txt', 'w') as f:
-        for idx in fail_files:
-            f.write(pred_files[idx].stem + '\n')
+    with open(pred_dir / f'{gt_dir.name}_failures.txt', 'w') as f:
+        f.write('file,false_positive,false_negative,wrong_labels\n')
+        for filename, fp, fn, count in failures:
+            f.write(','.join([filename.stem, str(fp), str(fn), str(count)]) + '\n')
 
     upper_mask = np.isin(gt_labels // 10, np.array([1, 2, 5, 6]))
 

@@ -1,7 +1,6 @@
 from collections import defaultdict
 from itertools import combinations
 import json
-from typing import Optional
 
 import numpy as np
 from torch.utils.data import Dataset, WeightedRandomSampler
@@ -13,19 +12,21 @@ class InstanceBalancedSampler(WeightedRandomSampler):
         self,
         dataset: Dataset,
     ):
-        scan_labels = np.zeros((len(dataset), 86))
+        scan_labels = np.zeros((len(dataset), 86), dtype=int)
         for i, case_files in enumerate(dataset.files):
             with open(dataset.root / case_files[1], 'rb') as f:
                 annotation = json.load(f)
 
             labels = np.array(annotation['labels'])
-            _, instances, counts = np.unique(
-                annotation['instances'], return_inverse=True, return_counts=True,
+            _, index, instances, counts = np.unique(
+                annotation['instances'],
+                return_index=True, return_inverse=True, return_counts=True,
             )
             labels[(counts < 30)[instances]] = 0
-            labels = np.unique(labels)
+            labels = labels[index]
 
-            scan_labels[i, labels[1:]] = 1
+            for label in labels[labels > 0]:
+                scan_labels[i, label] += 1
 
         repeat_factors = self._get_repeat_factors(scan_labels)
 
@@ -35,7 +36,7 @@ class InstanceBalancedSampler(WeightedRandomSampler):
             replacement=True,
         )
 
-    def _get_repeat_factors(self, scan_labels, repeat_thr: float=0.01):
+    def _get_repeat_factors(self, scan_labels, repeat_thr: float=0.05):
         # 1. For each category pair c, compute the fraction # of images
         #   that contain it: f(c)
         image_freq, inst_freq = defaultdict(int), defaultdict(int)
@@ -44,7 +45,7 @@ class InstanceBalancedSampler(WeightedRandomSampler):
             if not np.any(scan_labels[idx]):
                 continue
 
-            instances = np.nonzero(scan_labels[idx])[0]
+            instances = np.arange(86).repeat(scan_labels[idx])
             pair_ids = set()
             for pair in combinations(instances, 2):
                 pair_id = 2**pair[0] + 2**pair[1]
@@ -73,8 +74,8 @@ class InstanceBalancedSampler(WeightedRandomSampler):
             if not np.any(scan_labels[idx]):
                 repeat_factors.append(1.0)
                 continue
-            
-            instances = np.nonzero(scan_labels[idx])[0]
+
+            instances = np.arange(86).repeat(scan_labels[idx])
             pair_ids = set()
             for pair in combinations(instances, 2):
                 pair_id = 2**pair[0] + 2**pair[1]

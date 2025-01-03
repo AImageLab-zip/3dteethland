@@ -202,11 +202,10 @@ class TeethInstSegDataModule(TeethSegDataModule):
             covariance_matrix=covs[offset:offset + 16, offset:offset + 16, :2, :2],
         )
 
-        trans_log_probs = torch.zeros(idxs.shape[0], idxs.shape[0], 16, 16).to(classes.F)
-        for i, idx1 in enumerate(idxs):
-            for j, idx2 in enumerate(idxs):
-                offsets = classes.C[idx2] - classes.C[idx1]
-                trans_log_probs[i, j] = normals.log_prob(offsets[:2])
+        trans_log_probs = torch.zeros(idxs.shape[0] - 1, 16, 16).to(classes.F)
+        for i, (idx1, idx2) in enumerate(zip(idxs[:-1], idxs[1:])):
+            offsets = classes.C[idx2] - classes.C[idx1]
+            trans_log_probs[i] = normals.log_prob(offsets[:2])
 
         return trans_log_probs
     
@@ -227,23 +226,10 @@ class TeethInstSegDataModule(TeethSegDataModule):
         p[0] = up
 
         for i in range(1, classes.F.shape[0]):
-            paths = []
-            for k in range(16):
-                path = torch.tensor([k]).to(p)
-                for j in range(i - 1):
-                    path = torch.cat((p[None, i - 1 - j, path[0]], path))
-                paths.append(path)
-            paths = torch.stack(paths, dim=1)
-
             for j in range(16):
                 prev_costs = q[i - 1]
-                trans_costs = -trans_log_probs[
-                    torch.tile(torch.arange(i)[:, None], (1, 16)),
-                    torch.full((i, 16), i),
-                    paths,
-                    torch.full((i, 16), j),
-                ][-1]
-                trans_costs[j] = torch.inf
+                trans_costs = -trans_log_probs[i - 1, :, j]
+                trans_costs[j] = 40
 
                 costs = prev_costs + trans_costs
                 m = costs.amin()

@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
-import shutil
 from typing import Any, Dict, Optional, Tuple
 
+import pymeshlab
 import pytorch_lightning as pl
 import torch
 from torch_scatter import scatter_mean
@@ -49,7 +49,7 @@ def instance_nms(
     probs: PointTensor,
     point_idxs: TensorType['K', 'N', torch.int64],
     conf_thresh: float=0.5,
-    iou_thresh: float=0.35,
+    iou_thresh: float=0.3,
     score_thresh: float=0.8,
 ):
     fg_point_idxs, scores = [], torch.empty(0).to(probs.F)
@@ -79,10 +79,6 @@ def instance_nms(
 
         condition = iou >= iou_thresh
         keep = keep & ~condition
-
-    if not torch.all(keep):
-        print('NMS applied!')
-        k = 3
 
     return sort_index[keep].unique()
 
@@ -142,7 +138,7 @@ class FullNet(pl.LightningModule):
         )
         self.load_ckpt(self.single_tooth_model, ckpt)
 
-        self.gen_proposals = T.GenerateProposals(proposal_points, max_proposals=40)
+        self.gen_proposals = T.GenerateProposals(proposal_points, max_proposals=100)
         self.do_align = do_align
         self.tta = tta
         self.standardize = standardize
@@ -437,14 +433,17 @@ class FullNet(pl.LightningModule):
     ) -> Tuple[TensorType['N', torch.float32], PointTensor, PointTensor, PointTensor]:
         # stage 1
         if self.do_align:
-            x, affine = self.align_stage(x)
+            x, align_affine = self.align_stage(x)
+        else:
+            align_affine = torch.eye(4).to(x.C)
 
         # stage 2
-        x, instances, features, labels, affine = self.instances_stage(x)
+        x, instances, features, labels, standardize_affine = self.instances_stage(x)
         if torch.all(instances.F == -1) or self.only_dentalnet:
-            return instances, labels, None
+            return torch.zeros_like(x.C), instances, labels, None
         
         # stage 3
+        affine = standardize_affine @ align_affine
         probs, instances, labels, landmarks = self.single_tooth_stage(x, instances, features, labels, affine)
 
         return probs, instances.batch(0), labels.batch(0), landmarks
@@ -470,25 +469,36 @@ class FullNet(pl.LightningModule):
         instances: PointTensor,
         labels: PointTensor,
     ):
-        if torch.any(instances.F >= 0):
-            labels = torch.where(instances.F >= 0, labels.F[instances.F], 0)
-        else:
-            labels = torch.zeros_like(instances.F)
-        instances = torch.unique(instances.F, return_inverse=True)[1] - 1
-
-        out_dict = {
-            'instances': instances.cpu().tolist(),
-            'labels': labels.cpu().tolist(),
-            'confidences': probs.cpu().tolist(),
-        }
-        
+        # make output directory
         path = Path(self.trainer.datamodule.scan_file)
         if self.out_dir.name:
             out_file = self.out_dir / path.with_suffix('.json')
         else:
             out_file = self.trainer.datamodule.root / path.with_suffix('.json')
         out_file.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(self.trainer.datamodule.root / path, out_file.parent / path.name)
+
+        # save transformed mesh
+        mesh = pymeshlab.Mesh(
+            vertex_matrix=instances.C.cpu().numpy(),
+            face_matrix=self.trainer.datamodule.triangles.cpu().numpy(),
+        )
+        ms = pymeshlab.MeshSet()
+        ms.add_mesh(mesh)
+        ms.save_current_mesh(str(out_file.parent / path.name))
+
+        # determine per-point labels and instances
+        if torch.any(instances.F >= 0):
+            labels = torch.where(instances.F >= 0, labels.F[instances.F], 0)
+        else:
+            labels = torch.zeros_like(instances.F)
+        instances = torch.unique(instances.F, return_inverse=True)[1] - 1
+
+        # save as JSON file
+        out_dict = {
+            'instances': instances.cpu().tolist(),
+            'labels': labels.cpu().tolist(),
+            'confidences': probs.cpu().tolist(),
+        }        
         with open(out_file, 'w') as f:
             json.dump(out_dict, f)
 
