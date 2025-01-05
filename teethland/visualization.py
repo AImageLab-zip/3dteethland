@@ -163,12 +163,13 @@ def check_predictions():
     # root = Path('/home/mkaailab/Documents/CBCT/fusion/complete_cadavers/IOS scans')
     # root = Path('/home/mkaailab/Documents/IOS/Katja Vos/AKMA')
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test')
-    root = Path('/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_FDI_root')
+    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg')
     mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('**/*.ply')) + list(root.glob('**/*.stl')))
     # root = root.parent / 'last_case'
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete')
-    root = Path('/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_FDI_root')
+    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg')
+    # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper/cases')
     ann_files = sorted(root.glob('**/*er.json'))
     # ann_files = sorted(root.glob('**/*er.json'))
     clean = False
@@ -178,21 +179,100 @@ def check_predictions():
 
     start_idx = 0
     # files = mesh_files[start_idx:]
-    for i, ann_file in enumerate(ann_files):
+    for i, mesh_file in enumerate(mesh_files):
         # mesh_file = sorted(root.glob(f'{ann_file.name.split("_")[0]}/{ann_file.stem}*'))[-1]
         # mesh_file = root.parent / 'cases' / ann_file.stem.split('_')[0] / f'{ann_file.stem}.ply'
         # ann_file = Path(f'dentalnetPr/{mesh_file.stem}.json')
-        # ann_file = [f for f in ann_files if f.stem == mesh_file.stem][0]
-        mesh_file = [f for f in mesh_files if f.stem == ann_file.stem][0]
+        ann_file = [f for f in ann_files if f.stem == mesh_file.stem][0]
+        # mesh_file = [f for f in mesh_files if f.stem == ann_file.stem][0]
         # ann_file = next(root.parent.glob(f'**/{mesh_file.stem}.json'))
         if not ann_file.exists():
             continue
         # ann_file = mesh_file.with_suffix('.json')
         # print(i, ':', mesh_file.stem, ann_file)
 
-        # if mesh_file.stem not in ['202247_partial_lower']:
-        #     ann_file = Path('output/TVSR5QBQ_lower.json')
-        #     continue
+        if mesh_file.stem not in [
+# '0LF355FQ_lower',
+# '1MWJLE4X_lower',
+# '2GB3W1J0_lower',
+# '38JDN4ZV_lower',
+# '38JDN4ZV_upper',
+# '3OHU0Q5V_lower',
+# '4I10EMWA_upper',
+# '4J24X0ES_upper',
+# '4O6ZE6F3_lower',
+# '4W9X0QQI_lower',
+# '4W9X0QQI_upper',
+# '5JRH5J6E_lower',
+# '6TVH3SNC_lower',
+# '6TVH3SNC_upper',
+# '82D9U6D6_lower',
+# '82D9U6D6_upper',
+# 'AD8EQEUR_lower',
+# 'AYJQ5YMF_lower',
+# 'B5GFZIRW_lower',
+# 'C4LOTSKE_lower',
+# 'E11NEPB6_upper',
+# 'E4GH1D3S_lower',
+# 'E552BK9X_lower',
+# 'F92OKIOI_upper',
+# 'GBRCT97W_lower',
+# 'GSICB2I6_lower',
+# 'GW8YVYNF_lower',
+# 'HE565KIU_upper',
+# 'HPVH85IJ_lower',
+# 'HPVH85IJ_upper',
+# 'I13W39XQ_lower',
+# 'IFVHVDFO_lower',
+'IHKL3Y8N_lower',
+'IHKL3Y8N_upper',
+'JXVWXY0L_lower',
+'JXVWXY0L_upper',
+'K23X2RAU_lower',
+'KAHYFGOY_lower',
+'KKBN198S_lower',
+'KNIH5AER_upper',
+'KSHNN3DV_lower',
+'LNELLH3H_lower',
+'LUQGC700_upper',
+'MGYSCSI9_lower',
+'NFE03ULN_upper',
+'NQ2A571C_upper',
+'NV3U6JM9_lower',
+'ODC3F7X8_lower',
+'ORDHT9TX_lower',
+'ORDHT9TX_upper',
+'QHBUEFZ2_lower',
+'QHBUEFZ2_upper',
+'QOCAWJXM_lower',
+'S0AON6PZ_lower',
+'S0AON6PZ_upper',
+'SEN849RI_lower',
+'SEN849RI_upper',
+'SMP891U8_lower',
+'SMP891U8_upper',
+'TEPBA32B_lower',
+'U7UBW70K_lower',
+'U9UBDO05_lower',
+'U9UBDO05_upper',
+'UAO672OA_lower',
+'V5KEFD0N_lower',
+'V68KILV2_upper',
+'X67M31XQ_upper',
+'X7Z33TIA_upper',
+'XGTCZ6LH_lower',
+'XGTCZ6LH_upper',
+'Z27UU3OM_upper',
+'ameziani_lower',
+'karklina_lower',
+'mccarthy_lower',
+'mccarthy_upper',
+]:
+            ann_file = Path('output/TVSR5QBQ_lower.json')
+            continue
+
+        if ann_file.stem not in ['JXVWXY0L_upper']:
+            continue
 
         # draw_instances(mesh_file, ann_file)
         # draw_proposal(mesh_file, ann_file)

@@ -200,15 +200,6 @@ def process_scan(gt_files, pred_filename):
     with open(gt_filename, 'r') as f:
         gt_label_dict = json.load(f)
 
-    instances = np.array(gt_label_dict['instances'])
-    _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
-
-    labels = np.array(gt_label_dict['labels'])
-    labels[(counts < 100)[instances]] = 0
-    instances[(counts < 100)[instances]] = 0
-    gt_label_dict['labels'] = labels.tolist()
-    gt_label_dict['instances'] = instances.tolist()
-
     if 'lower_upper' in gt_filename.as_posix():
         # gt_label_dict['labels'] = (np.array(gt_label_dict['labels']) % 40).tolist()
         pred_labels = np.array(pred_label_dict['labels'])
@@ -234,18 +225,19 @@ if __name__ == "__main__":
     gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     # pred_dir = Path('3dteethseg')
     
-    gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
+    # gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
 
     all_scores = defaultdict(dict)
     for pred_dir in [
+        Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg'),
         # Path('mixed_3dteethseg_3')
-        Path('mixed_ios_stage1'),
-        Path('mixed_ios_stage1tta'),
-        Path('mixed_ios_stage2tta'),
+        # Path('mixed_ios_stage1'),
+        # Path('mixed_ios_stage1tta'),
+        # Path('mixed_ios_stage2tta'),
         # Path('mixed_ios_standardized'),
         # Path('mixed_ios_stage2'),
-        Path('mixed_ios_stage2twice'),
-        Path('mixed_ios'),
+        # Path('mixed_ios_stage2twice'),
+        # Path('mixed_ios'),
         # Path('3dteethseg_stage2tta'),
         # Path('3dteethseg_standardized'),
         # Path('3dteethseg_stage2'),
@@ -255,7 +247,7 @@ if __name__ == "__main__":
         scans, TLA, TSA, TIR = [], [], [], []
 
         gt_files = sorted(gt_dir.glob(f'**/*.json'))
-        pred_files = sorted(pred_dir.glob('*'))
+        pred_files = sorted(pred_dir.glob('*.json'))
 
         with mp.Pool(16) as p:
             i = p.imap_unordered(partial(process_scan, gt_files), pred_files)

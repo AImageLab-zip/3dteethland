@@ -36,7 +36,7 @@ class InstanceBalancedSampler(WeightedRandomSampler):
             replacement=True,
         )
 
-    def _get_repeat_factors(self, scan_labels, repeat_thr: float=0.05):
+    def _get_repeat_factors(self, scan_labels, repeat_thr: float=0.01):
         # 1. For each category pair c, compute the fraction # of images
         #   that contain it: f(c)
         image_freq, inst_freq = defaultdict(int), defaultdict(int)

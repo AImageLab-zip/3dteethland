@@ -393,7 +393,7 @@ class FullNet(pl.LightningModule):
         )
 
         if not isinstance(preds, list):
-            return max_probs, instances, labels, None
+            return instances, labels, None
         
         print('start landmarks')
         # apply NMS selection
@@ -444,9 +444,9 @@ class FullNet(pl.LightningModule):
         
         # stage 3
         affine = standardize_affine @ align_affine
-        probs, instances, labels, landmarks = self.single_tooth_stage(x, instances, features, labels, affine)
+        instances, labels, landmarks = self.single_tooth_stage(x, instances, features, labels, affine)
 
-        return probs, instances.batch(0), labels.batch(0), landmarks
+        return instances.batch(0), labels.batch(0), landmarks
     
     def predict_step(
         self,
@@ -458,14 +458,13 @@ class FullNet(pl.LightningModule):
         ],
         batch_idx: int,
     ):
-        probs, instances, classes, landmarks = self(batch)
+        instances, classes, landmarks = self(batch)
 
-        self.save_segmentation(probs, instances, classes)
+        self.save_segmentation(instances, classes)
         self.save_landmarks(landmarks)
 
     def save_segmentation(
         self,
-        probs: TensorType['N', torch.float32],
         instances: PointTensor,
         labels: PointTensor,
     ):
@@ -497,7 +496,6 @@ class FullNet(pl.LightningModule):
         out_dict = {
             'instances': instances.cpu().tolist(),
             'labels': labels.cpu().tolist(),
-            'confidences': probs.cpu().tolist(),
         }        
         with open(out_file, 'w') as f:
             json.dump(out_dict, f)

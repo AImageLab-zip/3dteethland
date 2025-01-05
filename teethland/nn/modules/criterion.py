@@ -147,6 +147,9 @@ class IdentificationLoss(nn.Module):
         classes: PointTensor,
         targets: PointTensor,
     ):
+        if classes.F.shape[0] == 0:
+            return 0
+        
         ce_loss = F.cross_entropy(classes.F, targets.F, reduction='none', label_smoothing=0.01)
 
         pt = torch.exp(-ce_loss)

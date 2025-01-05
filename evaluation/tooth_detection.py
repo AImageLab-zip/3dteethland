@@ -32,6 +32,7 @@ def process_scan(
         pred_point_idxs.append(set(point_idxs.tolist()))
 
     gt_instances = np.array(gt_label_dict['instances'])
+    gt_instances = np.unique(gt_instances, return_inverse=True)[1]
 
     gt_point_idxs = []
     for label in np.unique(gt_instances)[1:]:
@@ -40,8 +41,8 @@ def process_scan(
 
     tooth_dices = []
     gt_labels, pred_labels = [], []
-    ious = np.zeros((max(gt_label_dict['instances']), max(pred_label_dict['instances'])))
-    for i in range(max(gt_label_dict['instances'])):
+    ious = np.zeros((gt_instances.max(), max(pred_label_dict['instances'])))
+    for i in range(gt_instances.max()):
         for j in range(max(pred_label_dict['instances'])):
             inter = len(gt_point_idxs[i] & pred_point_idxs[j])
             union = len(gt_point_idxs[i] | pred_point_idxs[j])
@@ -74,8 +75,10 @@ if __name__ == "__main__":
     gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
     gt_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_partial')
+    gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper/cases')
     #pred_dir = Path('mixed_ios_standardized')
     pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete')
+    pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg')
     TLA, TSA, TIR = [], [], []
     verbose = False
 

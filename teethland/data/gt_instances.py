@@ -12,7 +12,6 @@ from tqdm import tqdm
 
 def process_scan(
     files: Tuple[Path, Path],
-    min_cluster_size: int=100,
 ):
     mesh_file, label_file = files
 
@@ -133,7 +132,11 @@ def determine_fdi_pair_distributions(
                 continue
 
             offsets = pair_offsets[fdi1, fdi2]
-            assert len(offsets) > 0            
+            if len(offsets) == 0:
+                fdi1_ = fdi1 + (16 if fdi1 < 16 else -16)
+                fdi2_ = fdi2 + (16 if fdi2 < 16 else -16)
+                offsets = pair_offsets[fdi1_, fdi2_]
+                print(fdi1, fdi2)
             pair_means[fdi1, fdi2] = np.mean(offsets, axis=0)
             pair_covs[fdi1, fdi2] = np.cov(offsets.T)
 
@@ -163,14 +166,16 @@ def determine_fdi_pair_distributions(
 if __name__ == '__main__':
     # get all files from storage
     root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset')
+    root = Path('/mnt/diag/IOS/3dteethseg/')
 
     mesh_files = [
-        *sorted(root.glob('result_complete/**/*partial*.ply')),
-        *sorted(root.glob('result_complete/**/*full*.ply'))
+        *sorted(root.glob('challenge_dataset/aligned/**/*.obj')),
+        # *sorted(root.glob('result_complete/**/*full*.ply'))
     ]
     label_files = [
-        *sorted(root.glob('complete_partial/**/*.json')),
-        *sorted(root.glob('complete_full/**/*.json')),
+        # *sorted(root.glob('complete_partial/**/*.json')),
+        # *sorted(root.glob('complete_full/**/*.json')),
+        *sorted(root.glob('full_dataset/lower_upper/cases/**/*.json'))
     ]
 
     # determine FDI pair distributions only on train data
@@ -189,5 +194,5 @@ if __name__ == '__main__':
 
     # save modeled tooth pair distributions to storage
     out = {'means': pair_means.tolist(), 'covs': pair_covs.tolist()}
-    with open('fdi_pair_distrs.json', 'w') as f:
+    with open('3dteethseg_fdi_pair_distrs.json', 'w') as f:
         json.dump(out, f)

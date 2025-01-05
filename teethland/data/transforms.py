@@ -966,6 +966,7 @@ class RandomPartial:
         min_points: int=0,
         do_translate: bool=True,
         do_planes: bool=True,
+        do_single_component: bool=True,
     ):
         self.rng = rng if rng is not None else np.random.default_rng()
         self.range = count_range
@@ -974,6 +975,7 @@ class RandomPartial:
         self.min_points = min_points
         self.do_translate = do_translate
         self.do_planes = do_planes
+        self.do_single_component = do_single_component
 
         num_counts = count_range[1] - count_range[0] + 1
         middle_idx = (num_counts - 1) // 2
@@ -1084,12 +1086,13 @@ class RandomPartial:
             centroids = data_dict['instance_centroids'][tooth_idxs]
             if self.do_planes:
                 # determine points inside of four planes
-                is_inside = self.determine_inside(points, centroids)
+                vertex_mask = self.determine_inside(points, centroids)
 
                 # determine largest area with connected triangles
-                vertex_mask = self.single_connected_component(
-                    points, triangles, is_inside, centroids[0],
-                )
+                if self.do_single_component:
+                    vertex_mask = self.single_connected_component(
+                        points, triangles, vertex_mask, centroids[0],
+                    )
             else:
                 # keep the points close to centroids of selected teeth
                 dists = np.linalg.norm(points[None] - centroids[:, None], axis=-1).min(0)
@@ -1099,18 +1102,19 @@ class RandomPartial:
                 break
 
         # update triangles
-        vertex_map = np.full((points.shape[0],), -1)
-        vertex_map[vertex_mask] = torch.arange(vertex_mask.sum())
-        triangles = vertex_map[triangles]
-        triangles = triangles[np.all(triangles >= 0, axis=-1)]
+        if self.do_single_component:
+            vertex_map = np.full((points.shape[0],), -1)
+            vertex_map[vertex_mask] = torch.arange(vertex_mask.sum())
+            triangles = vertex_map[triangles]
+            triangles = triangles[np.all(triangles >= 0, axis=-1)]
+            data_dict['triangles'] = triangles
+            data_dict['triangle_count'] = triangles.shape[0]
 
         data_dict['points'] = points[vertex_mask]
-        data_dict['triangles'] = triangles
         data_dict['normals'] = data_dict['normals'][vertex_mask]
         data_dict['labels'] = data_dict['labels'][vertex_mask]
         data_dict['instances'] = data_dict['instances'][vertex_mask]
         data_dict['point_count'] = vertex_mask.sum()
-        data_dict['triangle_count'] = triangles.shape[0]
 
         if not self.do_translate:
             return data_dict
@@ -1134,6 +1138,7 @@ class RandomPartial:
             f'    min_points={self.min_points},',
             f'    do_translate={self.do_translate},',
             f'    do_planes={self.do_planes},',
+            f'    do_single_component={self.do_single_component},',
             f'    probs={self.probs},',
             ')',
         ])

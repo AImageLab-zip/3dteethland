@@ -55,7 +55,12 @@ class TeethInstSegDataModule(TeethSegDataModule):
             train_files, val_files = self._split(files)
 
             train_transforms = T.Compose(
-                T.RandomPartial(rng, do_translate=False) if self.rand_partial else dict,
+                T.Compose(
+                    T.RandomPartial(rng, do_translate=False),
+                    T.ZScoreNormalize(None, 1),
+                    T.PoseNormalize(),
+                    T.InstanceCentroids(),
+                ) if self.rand_partial else dict,
                 T.RandomAxisFlip(rng=rng),
                 T.RandomScale(rng=rng),
                 T.RandomZAxisRotate(rng=rng),
@@ -191,7 +196,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
         classes,
         idxs,
     ):
-        with open('fdi_pair_distrs.json', 'r') as f:
+        with open('3dteethseg_fdi_pair_distrs.json', 'r') as f:
             pair_normals = json.load(f)
         means = torch.tensor(pair_normals['means']).to(classes.F.device)
         covs = torch.tensor(pair_normals['covs']).to(classes.F.device)
