@@ -14,7 +14,7 @@ def process_scan(
 ):
     pred_instances = np.array(pred_label_dict['instances'])
     if 'confidences' not in pred_label_dict:
-        pred_label_dict['confidences'] = np.ones_like(instances).tolist()
+        pred_label_dict['confidences'] = np.ones_like(pred_instances).tolist()
     pred_confidences = np.array(pred_label_dict['confidences'])
     pred_probs = []
     for label in np.unique(pred_instances):
@@ -72,13 +72,20 @@ def process_scan(
 
 
 if __name__ == "__main__":
+    sample_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg')
+
+
     gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
-    gt_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_partial')
-    gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper/cases')
+    gt_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full')
+    # gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper/cases')
+    # gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test_addenda')
+    # gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     #pred_dir = Path('mixed_ios_standardized')
     pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete')
-    pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg')
+    pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_partialnoalign')
+    # pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg')
+    # pred_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test_addenda')
     TLA, TSA, TIR = [], [], []
     verbose = False
 
@@ -88,8 +95,18 @@ if __name__ == "__main__":
         'gt_points': [], 'pred_points': [],
     }
 
-    gt_files = sorted(gt_dir.glob('**/*.json'))
+    gt_files = sorted(gt_dir.glob('**/*er.json'))
+    # gt_files = [f for f in gt_files if (sample_dir / f.name).exists()]
+    scan_ids = [f.stem for f in gt_files]
+    _, unique_idxs = np.unique(scan_ids, return_index=True)
+    gt_files = [gt_files[i] for i in unique_idxs]
+
     pred_files = sorted(pred_dir.glob('**/*.json'))
+    # pred_files = [f for f in pred_files if (sample_dir / f.name).exists()]
+    scan_ids = [f.stem for f in pred_files]
+    _, unique_idxs = np.unique(scan_ids, return_index=True)
+    pred_files = [pred_files[i] for i in unique_idxs]
+
     stems = set([f.stem for f in gt_files]) & set([f.stem for f in pred_files])
     gt_files = [f for f in gt_files if f.stem in stems]
     pred_files = [f for f in pred_files if f.stem in stems]

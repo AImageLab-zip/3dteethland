@@ -958,7 +958,7 @@ class RandomPartial:
 
     def __init__(
         self,
-        rng: Optional[np.random.Generator],
+        rng: Optional[np.random.Generator]=None,
         count_range: Tuple[int, int]=(2, 12),
         keep_radius: float=0.40,  # approximatly 14mm teeth
         p: float=0.9,
@@ -1107,14 +1107,14 @@ class RandomPartial:
             vertex_map[vertex_mask] = torch.arange(vertex_mask.sum())
             triangles = vertex_map[triangles]
             triangles = triangles[np.all(triangles >= 0, axis=-1)]
-            data_dict['triangles'] = triangles
-            data_dict['triangle_count'] = triangles.shape[0]
 
         data_dict['points'] = points[vertex_mask]
         data_dict['normals'] = data_dict['normals'][vertex_mask]
         data_dict['labels'] = data_dict['labels'][vertex_mask]
         data_dict['instances'] = data_dict['instances'][vertex_mask]
         data_dict['point_count'] = vertex_mask.sum()
+        data_dict['triangles'] = triangles
+        data_dict['triangle_count'] = triangles.shape[0]
 
         if not self.do_translate:
             return data_dict

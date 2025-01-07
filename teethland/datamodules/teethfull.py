@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -246,7 +245,7 @@ class TeethInstFullDataModule(TeethInstSegDataModule):
     def setup(self, stage: Optional[str]=None):
         if stage is None or stage == 'predict':
             files = self._files('predict', exclude=[])
-            # _, files = self._split(files)
+            _, files = self._split(files)
             print('Total number of files:', len(files))
             self.pred_dataset = TeethSegDataset(
                 stage='predict',

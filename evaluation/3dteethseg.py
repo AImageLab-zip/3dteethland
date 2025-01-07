@@ -210,7 +210,9 @@ def process_scan(gt_files, pred_filename):
     try:
         ms.load_new_mesh(str(gt_filename.with_suffix('.obj')))
     except Exception:
-        ms.load_new_mesh(str(gt_filename.with_suffix('.ply')))
+        mesh_file = sorted(gt_dir.glob(f'**/{gt_filename.stem}*'))[-1]
+        ms.load_new_mesh(str(mesh_file))
+        
     vertices = ms.current_mesh().vertex_matrix()
     gt_label_dict['mesh_vertices'] = vertices
 
@@ -221,6 +223,8 @@ def process_scan(gt_files, pred_filename):
 
 
 if __name__ == "__main__":
+    sample_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg')
+
     # gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')    
     gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     # pred_dir = Path('3dteethseg')
@@ -229,7 +233,7 @@ if __name__ == "__main__":
 
     all_scores = defaultdict(dict)
     for pred_dir in [
-        Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg'),
+        sample_dir,
         # Path('mixed_3dteethseg_3')
         # Path('mixed_ios_stage1'),
         # Path('mixed_ios_stage1tta'),
@@ -246,10 +250,19 @@ if __name__ == "__main__":
     ]:
         scans, TLA, TSA, TIR = [], [], [], []
 
-        gt_files = sorted(gt_dir.glob(f'**/*.json'))
-        pred_files = sorted(pred_dir.glob('*.json'))
+        gt_files = sorted(gt_dir.glob(f'**/*er.json'))
+        gt_files = [f for f in gt_files if (sample_dir / f.name).exists()]
+        scan_ids = [f.stem for f in gt_files]
+        _, unique_idxs = np.unique(scan_ids, return_index=True)
+        gt_files = [gt_files[i] for i in unique_idxs]
 
-        with mp.Pool(16) as p:
+        pred_files = sorted(pred_dir.glob(f'**/*er.json'))
+        pred_files = [f for f in pred_files if (sample_dir / f.name).exists()]
+        scan_ids = [f.stem for f in pred_files]
+        _, unique_idxs = np.unique(scan_ids, return_index=True)
+        pred_files = [pred_files[i] for i in unique_idxs]
+
+        with mp.Pool(8) as p:
             i = p.imap_unordered(partial(process_scan, gt_files), pred_files)
             for scan, tla, tsa, tir in tqdm(i, total=len(pred_files)):
                 

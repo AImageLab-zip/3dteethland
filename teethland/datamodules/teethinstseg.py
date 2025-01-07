@@ -196,7 +196,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
         classes,
         idxs,
     ):
-        with open('3dteethseg_fdi_pair_distrs.json', 'r') as f:
+        with open('fdi_pair_distrs.json', 'r') as f:
             pair_normals = json.load(f)
         means = torch.tensor(pair_normals['means']).to(classes.F.device)
         covs = torch.tensor(pair_normals['covs']).to(classes.F.device)

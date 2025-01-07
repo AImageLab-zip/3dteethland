@@ -163,12 +163,12 @@ def check_predictions():
     # root = Path('/home/mkaailab/Documents/CBCT/fusion/complete_cadavers/IOS scans')
     # root = Path('/home/mkaailab/Documents/IOS/Katja Vos/AKMA')
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test')
-    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg')
+    root = Path('/home/mkaailab/Documents/IOS/partials/res/aaddenda')
     mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('**/*.ply')) + list(root.glob('**/*.stl')))
     # root = root.parent / 'last_case'
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
     root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete')
-    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg')
+    root = Path('/home/mkaailab/Documents/IOS/partials/res/aaddenda')
     # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper/cases')
     ann_files = sorted(root.glob('**/*er.json'))
     # ann_files = sorted(root.glob('**/*er.json'))
@@ -186,93 +186,39 @@ def check_predictions():
         ann_file = [f for f in ann_files if f.stem == mesh_file.stem][0]
         # mesh_file = [f for f in mesh_files if f.stem == ann_file.stem][0]
         # ann_file = next(root.parent.glob(f'**/{mesh_file.stem}.json'))
-        if not ann_file.exists():
-            continue
+        # if not ann_file.exists():
+        #     continue
         # ann_file = mesh_file.with_suffix('.json')
         # print(i, ':', mesh_file.stem, ann_file)
 
         if mesh_file.stem not in [
-# '0LF355FQ_lower',
-# '1MWJLE4X_lower',
-# '2GB3W1J0_lower',
-# '38JDN4ZV_lower',
-# '38JDN4ZV_upper',
-# '3OHU0Q5V_lower',
-# '4I10EMWA_upper',
-# '4J24X0ES_upper',
-# '4O6ZE6F3_lower',
-# '4W9X0QQI_lower',
-# '4W9X0QQI_upper',
-# '5JRH5J6E_lower',
-# '6TVH3SNC_lower',
-# '6TVH3SNC_upper',
-# '82D9U6D6_lower',
-# '82D9U6D6_upper',
-# 'AD8EQEUR_lower',
-# 'AYJQ5YMF_lower',
-# 'B5GFZIRW_lower',
-# 'C4LOTSKE_lower',
-# 'E11NEPB6_upper',
-# 'E4GH1D3S_lower',
-# 'E552BK9X_lower',
-# 'F92OKIOI_upper',
-# 'GBRCT97W_lower',
-# 'GSICB2I6_lower',
-# 'GW8YVYNF_lower',
-# 'HE565KIU_upper',
-# 'HPVH85IJ_lower',
-# 'HPVH85IJ_upper',
-# 'I13W39XQ_lower',
-# 'IFVHVDFO_lower',
-'IHKL3Y8N_lower',
-'IHKL3Y8N_upper',
-'JXVWXY0L_lower',
-'JXVWXY0L_upper',
-'K23X2RAU_lower',
-'KAHYFGOY_lower',
-'KKBN198S_lower',
-'KNIH5AER_upper',
-'KSHNN3DV_lower',
-'LNELLH3H_lower',
-'LUQGC700_upper',
-'MGYSCSI9_lower',
-'NFE03ULN_upper',
-'NQ2A571C_upper',
-'NV3U6JM9_lower',
+'3EU06ZN9_lower',
 'ODC3F7X8_lower',
-'ORDHT9TX_lower',
-'ORDHT9TX_upper',
-'QHBUEFZ2_lower',
-'QHBUEFZ2_upper',
-'QOCAWJXM_lower',
-'S0AON6PZ_lower',
-'S0AON6PZ_upper',
-'SEN849RI_lower',
-'SEN849RI_upper',
-'SMP891U8_lower',
-'SMP891U8_upper',
-'TEPBA32B_lower',
-'U7UBW70K_lower',
-'U9UBDO05_lower',
-'U9UBDO05_upper',
-'UAO672OA_lower',
-'V5KEFD0N_lower',
-'V68KILV2_upper',
+'07ZWIO50_upper',
+'2Q8KKZ6V_upper',
+'4W9X0QQI_upper',
+'6TVH3SNC_upper',
+'82J9I2HU_upper',
+'87N5YSES_upper',
+'8JYS0DD1_upper',
+'8QFKXVYB_lower',
+'C4LOTSKE_lower',
+'C6C00RHE_lower',
+'CYU4HS3D_lower',
+'DC8VMT30_lower',
+'E11NEPB6_upper',
+'E552BK9X_upper',
+'HQN0ZJDP_upper',
+'I04GI3H5_upper',
+'JJEIMAPR_lower',
+'O2LXM8BS_lower',
 'X67M31XQ_upper',
-'X7Z33TIA_upper',
-'XGTCZ6LH_lower',
-'XGTCZ6LH_upper',
+'XD8J3TG7_lower',
 'Z27UU3OM_upper',
-'ameziani_lower',
-'karklina_lower',
-'mccarthy_lower',
-'mccarthy_upper',
 ]:
             ann_file = Path('output/TVSR5QBQ_lower.json')
             continue
 
-        if ann_file.stem not in ['JXVWXY0L_upper']:
-            continue
 
         # draw_instances(mesh_file, ann_file)
         # draw_proposal(mesh_file, ann_file)
