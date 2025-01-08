@@ -1,5 +1,5 @@
 work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: infer
+version: maud_lu_fractures_0
 seed: 0
 
 model:
@@ -143,19 +143,20 @@ datamodule:
   # root: '/home/mkaailab/Documents/IOS/Katja Vos/AKMA'
   # root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/root'
   root: '/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full'
+  root: '/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_fractures_singletooth'
   # root: '/mnt/diag/IOS/3dteethseg/full_dataset/test'
   landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
   regex_filter: ''
   extensions: ['ply', 'stl', 'obj']
   # fold: 0
-  fold: 'complete_fold_4.txt'
-  norm: True
-  clean: True  # TODO: Set to true for Grand Challenge inference
+  fold: 'fractures_fold_0.txt'
+  norm: False
+  clean: False  # TODO: Set to true for Grand Challenge inference
   val_size: 0.2
   include_val_as_train: False
-  sampler: 'balanced'  # 'default' or 'balanced'
+  sampler: 'binary'  # 'default', 'balanced', or 'binary'
   batch: null  # [0, 100]
-  batch_size: 2
+  batch_size: 16
   num_workers: 4
   pin_memory: True
   persistent_workers: True
@@ -164,5 +165,5 @@ datamodule:
   max_proposals: 8
   m3_as_m2: False
   distinguish_left_right: true
-  random_partial: True
+  random_partial: False
   distinguish_upper_lower: false  # True worse

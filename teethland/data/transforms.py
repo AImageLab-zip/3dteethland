@@ -9,7 +9,7 @@ from scipy.special import softmax
 from scipy.stats import multivariate_normal, truncnorm
 from sklearn.decomposition import PCA
 import torch
-from torch_scatter import scatter_mean, scatter_min
+from torch_scatter import scatter_mean, scatter_min, scatter_max
 from torchtyping import TensorType
 
 
@@ -653,9 +653,12 @@ class InstanceCentroids:
             index=torch.from_numpy(instances),
             dim=0,
         ).numpy()
-
-        instance_point_idxs = np.bincount(instances).cumsum() - 1
-        instance_labels = labels[np.argsort(instances)[instance_point_idxs]]
+        
+        instance_labels = scatter_max(
+            src=torch.from_numpy(labels),
+            index=torch.from_numpy(instances),
+            dim=0,
+        )[0].numpy()
 
         data_dict['points'] = points
         data_dict['instance_centroids'] = instance_centroids
@@ -781,10 +784,12 @@ class GenerateProposals:
         proposal_points: int,
         max_proposals: int,
         rng: Optional[np.random.Generator]=None,
+        label_as_instance: bool=True,
     ):
         self.proposal_points = proposal_points
         self.max_proposals = max_proposals
         self.rng = rng if rng is not None else np.random.default_rng()
+        self.label_as_instance = label_as_instance
 
     def __call__(
         self,
@@ -825,7 +830,10 @@ class GenerateProposals:
 
         dists = np.linalg.norm(points[None] - centroids[:, None], axis=-1)
         point_idxs = np.argsort(dists, axis=1)[:, :self.proposal_points]
-        fg_masks = data_dict['instances'][point_idxs] == instance_idxs[:, None]
+        if self.label_as_instance:
+            fg_masks = data_dict['labels'][point_idxs] == instance_idxs[:, None]
+        else:
+            fg_masks = data_dict['instances'][point_idxs] == instance_idxs[:, None]            
 
         data_dict['points'] = points[point_idxs]
         data_dict['normals'] = data_dict['normals'][point_idxs]

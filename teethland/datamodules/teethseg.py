@@ -9,7 +9,7 @@ import pytorch_lightning as pl
 from skmultilearn.model_selection import IterativeStratification
 from torch.utils.data import DataLoader, Dataset, Sampler
 
-from teethland.data.samplers import InstanceBalancedSampler
+from teethland.data.samplers import ClassAwareSampler, InstanceBalancedSampler
 
 
 class TeethSegDataModule(pl.LightningDataModule):
@@ -109,7 +109,7 @@ class TeethSegDataModule(pl.LightningDataModule):
             val_files = [fs for i, fs in enumerate(files) if mesh_files[i].name in val_mesh_files]
             if self.include_val_as_train:
                 train_files += val_files
-                
+
             return train_files, val_files
 
         # determine classes and mesh and annotation files of each subject
@@ -121,6 +121,7 @@ class TeethSegDataModule(pl.LightningDataModule):
                 annotation = json.load(f)
 
             subject = '_'.join(re.split('_|-', case_files[0].stem)[:-1])
+            subject = case_files[0].stem.split(' ')[0]
             labels = np.array(annotation['labels'])
             _, instances, counts = np.unique(
                 annotation['instances'], return_inverse=True, return_counts=True,
@@ -149,7 +150,7 @@ class TeethSegDataModule(pl.LightningDataModule):
 
         # write folds to storage for documentation
         for i, (_, fold_idxs) in enumerate(splits):
-            with open(f'3dteethseg_fold_{i}.txt', 'w') as f:
+            with open(f'fractures_fold_{i}.txt', 'w') as f:
                 for subject_idx in fold_idxs:
                     for fs in subject_files[subject_idx]:
                         f.write(fs[0].name + '\n')
@@ -183,6 +184,8 @@ class TeethSegDataModule(pl.LightningDataModule):
     def train_dataloader(self) -> DataLoader:
         if self.sampler == 'balanced':
             sampler = InstanceBalancedSampler(self.train_dataset)
+        elif self.sampler == 'binary':
+            sampler = ClassAwareSampler(self.train_dataset)
         else:
             sampler = None
         return self._dataloader(self.train_dataset, sampler=sampler)
