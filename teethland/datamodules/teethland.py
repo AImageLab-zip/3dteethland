@@ -65,7 +65,7 @@ class TeethLandDataModule(TeethBinSegDataModule):
             train_files, val_files = self._split(files)           
                                       
             train_transforms = T.Compose(
-                T.RandomAxisFlip(rng=rng),
+                T.RandomXAxisFlip(rng=rng),
                 T.RandomScale(rng=rng),
                 T.RandomZAxisRotate(rng=rng),
                 default_transforms,

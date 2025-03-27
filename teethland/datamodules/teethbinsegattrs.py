@@ -4,6 +4,7 @@ from typing import Any, List, Dict, Optional, Tuple, Union
 import numpy as np
 import torch
 from torchtyping import TensorType
+from torch_scatter import scatter_max
 
 from teethland import PointTensor
 from teethland.datamodules.teethseg import TeethSegDataModule
@@ -11,8 +12,8 @@ from teethland.data.datasets import TeethSegDataset
 import teethland.data.transforms as T
 
 
-class TeethBinSegDataModule(TeethSegDataModule):
-    """Implements data module that loads tooth crops and segmentationsof the 3DTeethLand challenge."""
+class TeethBinSegWithAttributesDataModule(TeethSegDataModule):
+    """Implements data module that loads tooth crops and segmentations of the 3DTeethLand challenge."""
 
     def __init__(
         self,
@@ -113,7 +114,7 @@ class TeethBinSegDataModule(TeethSegDataModule):
         Path,
         TensorType['B', torch.bool],
         PointTensor,
-        PointTensor,     
+        Tuple[PointTensor, PointTensor],
     ]:
         batch_dict = {key: [d[key] for d in batch] for key in batch[0]}
 
@@ -137,19 +138,52 @@ class TeethBinSegDataModule(TeethSegDataModule):
             instance_offsets = instance_offsets.repeat_interleave(point_counts)
             points.F[points.F >= 0] += instance_offsets[points.F >= 0]
 
-        return scan_file, is_lower, x, points
+        # put individual caries instances as indices 2 or more in points tensor
+        caries_inst_attributes = []
+        for i, attrs in enumerate(batch_dict['attributes']):
+            caries_insts = torch.unique(attrs // 100, return_inverse=True)[1] - 1
+            caries_inst_attributes.append(caries_insts)
+
+        caries_instances = torch.cat(caries_inst_attributes)
+        instance_counts = [torch.unique(insts).shape[0] - 1 for insts in caries_instances]
+        instance_counts = torch.tensor(instance_counts).to(point_counts)
+        instance_offsets = instance_counts.cumsum(dim=0) - instance_counts
+        instance_offsets = instance_offsets.repeat_interleave(point_counts)
+        instance_offsets = instance_offsets.reshape(caries_instances.shape[0], -1)
+        caries_instances[caries_instances >= 0] += instance_offsets[caries_instances >= 0]
+        caries_instances = caries_instances.flatten()
+
+        points.F[caries_instances >= 0] = 2 + caries_instances[caries_instances >= 0]
+
+        # make a tensor of individual caries instances with caries types as features
+        instance_labels = scatter_max(
+            src=torch.cat(batch_dict['attributes']).flatten() % 100,
+            index=caries_instances.flatten() + 1,
+            dim=0,
+        )[0][1:]
+        instances = PointTensor(
+            coordinates=torch.zeros(instance_counts.sum(), 3).to(points.C),
+            features=instance_labels,
+            batch_counts=instance_counts,
+        )
+
+        return scan_file, is_lower, x, (points, instances)
     
     def transfer_batch_to_device(
         self,
         batch,
         device: torch.device,
         dataloader_idx: int,
-    ) -> Tuple[PointTensor, PointTensor]:
+    ) -> Tuple[
+        PointTensor, 
+        Tuple[PointTensor, PointTensor],
+    ]:
         self.scan_file = batch[0]
         self.is_lower = batch[1].to(device)
 
-        x, points = batch[2:]
+        x, (points, instances) = batch[2:]
         x = x.to(device)
         points = points.to(device)
+        instances = instances.to(device)
 
-        return x, points
+        return x, (points, instances)

@@ -195,17 +195,25 @@ class RandomJitter(object):
         ])
 
 
-class RandomAxisFlip(object):
+class RandomXAxisFlip(object):
 
     def __init__(
         self,
-        axis: int=0,
         prob: float=0.5,
         rng: Optional[np.random.Generator]=None,
     ) -> None:
-        self.axis = axis
         self.prob = prob
         self.rng = np.random.default_rng() if rng is None else rng
+
+        self.label_map = np.arange(86)
+        self.label_map[11:19] = np.arange(21, 29)
+        self.label_map[21:29] = np.arange(11, 19)
+        self.label_map[31:39] = np.arange(41, 49)
+        self.label_map[41:49] = np.arange(31, 39)
+        self.label_map[51:56] = np.arange(61, 66)
+        self.label_map[61:66] = np.arange(51, 56)
+        self.label_map[71:76] = np.arange(81, 86)
+        self.label_map[81:86] = np.arange(71, 76)
 
     def __call__(
         self,
@@ -219,27 +227,23 @@ class RandomAxisFlip(object):
             return data_dict
 
         data_dict['flip'] = True
-        points[:, self.axis] = -points[:, self.axis]
+        points[:, 0] = -points[:, 0]
         data_dict['points'] = points
 
         if 'normals' in data_dict:
-            data_dict['normals'][:, self.axis] = -data_dict['normals'][:, self.axis]
+            data_dict['normals'][:, 0] = -data_dict['normals'][:, 0]
 
         if 'landmark_coords' in data_dict:
-            landmarks = data_dict['landmark_coords'][:, self.axis]
-            data_dict['landmark_coords'][:, self.axis] = -landmarks
+            landmarks = data_dict['landmark_coords'][:, 0]
+            data_dict['landmark_coords'][:, 0] = -landmarks
 
         if 'instance_centroids' in data_dict:
-            centroids = data_dict['instance_centroids'][:, self.axis]
-            data_dict['instance_centroids'][:, self.axis] = -centroids
+            centroids = data_dict['instance_centroids'][:, 0]
+            data_dict['instance_centroids'][:, 0] = -centroids
 
         if 'labels' in data_dict:
-            labels = data_dict['instance_labels'].copy()
-            labels[np.isin(data_dict['instance_labels'] // 10, [1, 3])] += 10
-            labels[np.isin(data_dict['instance_labels'] // 10, [2, 4])] -= 10
-
-            data_dict['instance_labels'] = labels
-            data_dict['labels'] = labels[data_dict['instances']]
+            data_dict['instance_labels'] = self.label_map[data_dict['instance_labels']]
+            data_dict['labels'] = self.label_map[data_dict['labels']]
 
         return data_dict
 
@@ -459,6 +463,28 @@ class NormalAsFeatures:
         return self.__class__.__name__ + '()'
 
 
+class ColorAsFeatures:
+
+    def __call__(
+        self,
+        colors: NDArray[Any],
+        **data_dict: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if 'features' in data_dict:
+            data_dict['features'] = np.concatenate(
+                (data_dict['features'], colors), axis=-1,
+            )
+        else:
+            data_dict['features'] = colors        
+            
+        data_dict['colors'] = colors
+
+        return data_dict
+
+    def __repr__(self) -> str:
+        return self.__class__.__name__ + '()'
+
+
 class CentroidOffsetsAsFeatures:
 
     def __call__(
@@ -534,7 +560,7 @@ class UniformDensityDownsample:
         data_dict['points'] = points[argmin]
         data_dict['point_count'] = argmin.shape[0]
 
-        for key in ['features', 'labels', 'instances', 'normals']:
+        for key in ['features', 'labels', 'types', 'instances', 'normals', 'colors', 'attributes']:
             if key not in data_dict:
                 continue
 
@@ -597,7 +623,7 @@ class BoundaryAwareDownsample(UniformDensityDownsample):
         data_dict['points'] = data_dict['points'][rand_idxs]
         data_dict['point_count'] = rand_idxs.shape[0]
 
-        for key in ['features', 'labels', 'instances']:
+        for key in ['features', 'labels', 'types', 'instances', 'attributes']:
             if key not in data_dict:
                 continue
 
@@ -629,24 +655,7 @@ class InstanceCentroids:
 
             return data_dict
 
-        labels, instances = data_dict['labels'], data_dict['instances']
-
-        if labels.shape[0] < points.shape[0]:
-            print(data_dict['scan_file'], 'more points than labels!')
-            diff = points.shape[0] - labels.shape[0]
-            labels = np.concatenate((labels, [0]*diff))
-            instances = np.concatenate((instances, [0]*diff))
-            
-            data_dict['labels'] = labels
-            data_dict['instances'] = instances
-        elif labels.shape[0] > points.shape[0]:
-            print(data_dict['scan_file'], 'more labels than points!')
-            diff = labels.shape[0] - points.shape[0]
-            labels = labels[:-diff]
-            instances = instances[:-diff]
-            
-            data_dict['labels'] = labels
-            data_dict['instances'] = instances
+        labels, types, instances = data_dict['labels'], data_dict['types'], data_dict['instances']
 
         instance_centroids = scatter_mean(
             src=torch.from_numpy(points),
@@ -659,10 +668,16 @@ class InstanceCentroids:
             index=torch.from_numpy(instances),
             dim=0,
         )[0].numpy()
+        instance_types = scatter_max(
+            src=torch.from_numpy(types),
+            index=torch.from_numpy(instances),
+            dim=0,
+        )[0].numpy()
 
         data_dict['points'] = points
         data_dict['instance_centroids'] = instance_centroids
         data_dict['instance_labels'] = instance_labels
+        data_dict['instance_types'] = instance_types
         data_dict['instance_count'] = instance_labels.shape[0]
 
         return data_dict
@@ -784,7 +799,7 @@ class GenerateProposals:
         proposal_points: int,
         max_proposals: int,
         rng: Optional[np.random.Generator]=None,
-        label_as_instance: bool=True,
+        label_as_instance: bool=False,
     ):
         self.proposal_points = proposal_points
         self.max_proposals = max_proposals
@@ -801,6 +816,10 @@ class GenerateProposals:
             data_dict['points'] = points
 
             return data_dict
+        
+        _, counts = np.unique(data_dict['instances'], return_counts=True)
+        if counts[1:].max() > self.proposal_points:
+            print('Tooth points:', counts[1:].max(), ', Max points:', self.proposal_points)
         
         unique_instances = np.unique(data_dict['instances'])[1:]
         instance_idxs = np.sort(self.rng.choice(
@@ -830,14 +849,16 @@ class GenerateProposals:
 
         dists = np.linalg.norm(points[None] - centroids[:, None], axis=-1)
         point_idxs = np.argsort(dists, axis=1)[:, :self.proposal_points]
+        labels = (data_dict['instances'][point_idxs] == instance_idxs[:, None]).astype(int)
         if self.label_as_instance:
-            fg_masks = data_dict['labels'][point_idxs] == instance_idxs[:, None]
-        else:
-            fg_masks = data_dict['instances'][point_idxs] == instance_idxs[:, None]            
+            fg_mask = data_dict['labels'][point_idxs] == instance_idxs[:, None]
+            labels = labels + fg_mask
 
         data_dict['points'] = points[point_idxs]
         data_dict['normals'] = data_dict['normals'][point_idxs]
-        data_dict['labels'] = fg_masks.astype(int)
+        if 'colors' in data_dict: data_dict['colors'] = data_dict['colors'][point_idxs]
+        if 'attributes' in data_dict: data_dict['attributes'] = data_dict['attributes'][point_idxs]
+        data_dict['labels'] = labels
         data_dict['centroids'] = centroids
         data_dict['point_count'] = np.array([self.proposal_points]).repeat(centroids.shape[0])
         data_dict['point_idxs'] = point_idxs
@@ -1118,7 +1139,10 @@ class RandomPartial:
 
         data_dict['points'] = points[vertex_mask]
         data_dict['normals'] = data_dict['normals'][vertex_mask]
+        data_dict['colors'] = data_dict['colors'][vertex_mask]
         data_dict['labels'] = data_dict['labels'][vertex_mask]
+        data_dict['types'] = data_dict['types'][vertex_mask]
+        data_dict['attributes'] = data_dict['attributes'][vertex_mask]
         data_dict['instances'] = data_dict['instances'][vertex_mask]
         data_dict['point_count'] = vertex_mask.sum()
         data_dict['triangles'] = triangles

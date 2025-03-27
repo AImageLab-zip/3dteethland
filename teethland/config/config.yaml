@@ -1,5 +1,5 @@
 work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: maud_lu_fractures_0
+version: katja_withattributes_200epochs_01identify
 seed: 0
 
 model:
@@ -20,6 +20,7 @@ model:
     transformer_lr_ratio: 0.1
     checkpoint_path: '/home/mkaailab/Documents/IOS/partials/checkpoints/china_align_all_0.ckpt'
     checkpoint_path: 'checkpoints/3dteethseg_align_all.ckpt'
+    checkpoint_path: '/mnt/diag/IOS/partials/checkpoints/3dteethseg_align_all.ckpt'
     lr: 0.001
     weight_decay: 0.0001
     epochs: 1000
@@ -43,9 +44,12 @@ model:
     transformer_lr_ratio: 0.1
     checkpoint_path: '/home/mkaailab/Documents/IOS/partials/checkpoints/china_instseg_partialnoalign_4.ckpt'
     # checkpoint_path: 'checkpoints/3dteethseg_instseg_all.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/IOS/3dteethland/code/checkpoints/maud_lu_instseg.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/maud_lu_c_panoptic_1/checkpoints/weights-epoch=199.ckpt'
+    checkpoint_path: '/mnt/diag/IOS/partials/checkpoints/3dteethseg_instseg_all.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
-    epochs: 600  # overfitting after 600
+    epochs: 200  # overfitting after 600
     warmup_epochs: 5
 
   mixedseg:
@@ -94,7 +98,6 @@ model:
   
   binseg:
     channels_list: [48, 96, 192, 256]
-    out_channels: 1
     depths: [3, 9, 3]
     heads_list: [6, 12, 24]
     window_sizes: [0.1, 0.2, 0.4]
@@ -110,12 +113,34 @@ model:
     transformer_lr_ratio: 0.1
     checkpoint_path: '/home/mkaailab/Documents/IOS/partials/checkpoints/china_binseg_partialnoalign_4.ckpt'
     # checkpoint_path: 'checkpoints/3dteethseg_binseg_all.ckpt'
+    checkpoint_path: '/mnt/diag/IOS/partials/checkpoints/3dteethseg_binseg_all.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
-    epochs: 250
+    epochs: 80
     warmup_epochs: 5
 
-  proposal_points: 10000
+  binseg_attributes:
+    channels_list: [48, 96, 192, 256]
+    depths: [3, 9, 3]
+    heads_list: [6, 12, 24]
+    window_sizes: [0.1, 0.2, 0.4]
+    point_embedding:
+      use: True
+      kpconv_point_influence: 0.015
+      kpconv_ball_radius: 0.03
+    stratified_union: False
+    downsample_ratio: 0.26
+    max_drop_path_prob: 0.3
+    stratified_downsample_ratio: 0.26
+    crpe_bins: 80
+    transformer_lr_ratio: 0.1
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/katja_withattributes_200epochs_01identify/checkpoints/weights-epoch=199.ckpt'
+    lr: 0.0006
+    weight_decay: 0.0001
+    epochs: 200
+    warmup_epochs: 5
+
+  proposal_points: 15000
   dbscan_cfg:
     max_neighbor_dist: 0.03
     min_points: 40  # [30, 50]
@@ -123,7 +148,6 @@ model:
     weighted_average: True
   do_align: True
   tta: True
-  standardize: False
   stage2_iters: 2
   post_process_seg: True
   post_process_labels: True
@@ -131,39 +155,35 @@ model:
 accumulate_grad_batches: 1  # 1 better segmentation, worse classification
 gradient_clip_norm: 35  # 10 is worse
 
-out_dir: '/home/mkaailab/Documents/IOS/partials/full_dataset/result_partialnoalign'
-# out_dir: ''
+out_dir: '/home/mkaailab/Documents/IOS/Katja Vos/predictions'
 datamodule:
-  root: '/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper'
-  # root: '/home/mkaailab/Documents/IOS/3dteethland/code/input'
-  # root: '/home/mkaailab/Documents/CBCT/fusion/IOS arches'
-  # root: '/home/mkaailab/Documents/IOS/partials/root_full_part5'
-  # root: '/mnt/diag/IOS/3dteethseg/full_dataset/failures'
-  # root: '/mnt/diag/IOS/3dteethseg/challenge_dataset'
-  # root: '/home/mkaailab/Documents/IOS/Katja Vos/AKMA'
-  # root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/root'
-  root: '/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full'
-  root: '/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_fractures_singletooth'
-  # root: '/mnt/diag/IOS/3dteethseg/full_dataset/test'
+  root: '/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_C_FDI&Toothtype_root'
+  root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/root'
+  root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/root_another30'
+  root: '/home/mkaailab/Documents/IOS/Katja Vos/data/caries_singletooth2'
+  root: '/home/mkaailab/Documents/IOS/Katja Vos/data/root_AKMA'
+  # root: '/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_C_fractures_singletooth'
   landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
   regex_filter: ''
   extensions: ['ply', 'stl', 'obj']
   # fold: 0
-  fold: 'fractures_fold_0.txt'
-  norm: False
-  clean: False  # TODO: Set to true for Grand Challenge inference
+  fold: 'caries_fold_0.txt'
+  norm: true
+  clean: true  # TODO: Set to true for Grand Challenge inference
   val_size: 0.2
   include_val_as_train: False
   sampler: 'binary'  # 'default', 'balanced', or 'binary'
   batch: null  # [0, 100]
   batch_size: 16
-  num_workers: 4
+  num_workers: 0
   pin_memory: True
-  persistent_workers: True
+  persistent_workers: False
   uniform_density_voxel_size: [0.025, 0.01]  # instseg, single-tooth
-  proposal_points: 10000
+  proposal_points: 12000
   max_proposals: 8
   m3_as_m2: False
   distinguish_left_right: true
   random_partial: False
   distinguish_upper_lower: false  # True worse
+  label_as_instance: True
+  with_color: True

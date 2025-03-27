@@ -66,6 +66,8 @@ class MaskedAveragePooling(nn.Module):
         features: PointTensor,
         instances: PointTensor,
     ) -> Tuple[PointTensor, PointTensor]:
+        assert torch.any(instances.F == -1)
+        
         ids = instances.F.unique()
         if ids.shape[0] == 1:
             out = PointTensor(
@@ -95,17 +97,14 @@ class MaskedAveragePooling(nn.Module):
             dim=0
         )
         
-        max_ids = scatter_max(
-            instances.F,
-            instances.batch_indices,
-            dim=0,
-        )[0]
-        batch_counts = max_ids - torch.cat((torch.full_like(max_ids[:1], -1), max_ids))[:-1]
-
+        batch_counts = []
+        for idx in torch.unique(instances.batch_indices):
+            count = torch.unique(instances.F[instances.batch_indices == idx]).shape[0] - 1
+            batch_counts.append(count)
         out = PointTensor(
             coordinates=centroids,
             features=self.mlp(embeddings),
-            batch_counts=batch_counts,
+            batch_counts=torch.tensor(batch_counts).to(instances.batch_indices),
         )
 
         return prototypes, out

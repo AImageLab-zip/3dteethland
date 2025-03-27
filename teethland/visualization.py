@@ -1,20 +1,11 @@
 import math
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import numpy as np
 import open3d
-# from open3d.visualization.tensorboard_plugin import summary  # do not remove
-# from open3d.visualization.tensorboard_plugin.util import to_dict_batch
 import pymeshlab
 import torch
-
-if __name__ == '__main__':
-    import os, sys
-    sys.path.append(os.getcwd())
-
-# from teethland import PointTensor
-from torch import Tensor as PointTensor
 
 
 palette = torch.tensor([
@@ -44,7 +35,7 @@ palette = torch.tensor([
 
 def draw_mesh(
     file: Path,
-    pt: PointTensor,
+    pt,
 ) -> None:
     ms = pymeshlab.MeshSet()
     ms.load_new_mesh(str(file))
@@ -68,7 +59,7 @@ def draw_mesh(
 
 
 def draw_point_clouds(
-    pt: PointTensor,
+    pt,
     output_type: Optional[str]=None,
 ) -> Optional[List[open3d.geometry.PointCloud]]:
     pt = pt.to('cpu')
@@ -153,142 +144,99 @@ def draw_landmarks(
     open3d.visualization.draw_geometries([geom, *balls], width=1600, height=900)
 
 
-def check_predictions():
-    root = Path('/mnt/diag/IOS/Brazil/Modelberging')
-    root = Path('/home/mkaailab/Documents/CBCT/fusion/stls')
-    root = Path('/home/mkaailab/Documents/IOS/Katja VOs/transfer_2892173_files_6b1a93dd')
-    # root = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
-    root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete')
-    # root = Path('/home/mkaailab/Documents/CBCT/fusion/complete_cadavers/IOS scans')
-    # root = Path('/home/mkaailab/Documents/IOS/Katja Vos/AKMA')
-    # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test')
-    root = Path('/home/mkaailab/Documents/IOS/partials/res/aaddenda')
-    mesh_files = sorted(list(root.glob('**/*.obj')) + list(root.glob('**/*.ply')) + list(root.glob('**/*.stl')))
-    # root = root.parent / 'last_case'
-    # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    root = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete')
-    root = Path('/home/mkaailab/Documents/IOS/partials/res/aaddenda')
-    # root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper/cases')
-    ann_files = sorted(root.glob('**/*er.json'))
-    # ann_files = sorted(root.glob('**/*er.json'))
-    clean = False
-
-    # with open('failures.txt', 'r') as f:
-    #     stems = [l.strip() for l in f.readlines() if l.strip()]
-
-    start_idx = 0
-    # files = mesh_files[start_idx:]
-    for i, mesh_file in enumerate(mesh_files):
-        # mesh_file = sorted(root.glob(f'{ann_file.name.split("_")[0]}/{ann_file.stem}*'))[-1]
-        # mesh_file = root.parent / 'cases' / ann_file.stem.split('_')[0] / f'{ann_file.stem}.ply'
-        # ann_file = Path(f'dentalnetPr/{mesh_file.stem}.json')
-        ann_file = [f for f in ann_files if f.stem == mesh_file.stem][0]
-        # mesh_file = [f for f in mesh_files if f.stem == ann_file.stem][0]
-        # ann_file = next(root.parent.glob(f'**/{mesh_file.stem}.json'))
-        # if not ann_file.exists():
-        #     continue
-        # ann_file = mesh_file.with_suffix('.json')
-        # print(i, ':', mesh_file.stem, ann_file)
-
-        if mesh_file.stem not in [
-'3EU06ZN9_lower',
-'ODC3F7X8_lower',
-'07ZWIO50_upper',
-'2Q8KKZ6V_upper',
-'4W9X0QQI_upper',
-'6TVH3SNC_upper',
-'82J9I2HU_upper',
-'87N5YSES_upper',
-'8JYS0DD1_upper',
-'8QFKXVYB_lower',
-'C4LOTSKE_lower',
-'C6C00RHE_lower',
-'CYU4HS3D_lower',
-'DC8VMT30_lower',
-'E11NEPB6_upper',
-'E552BK9X_upper',
-'HQN0ZJDP_upper',
-'I04GI3H5_upper',
-'JJEIMAPR_lower',
-'O2LXM8BS_lower',
-'X67M31XQ_upper',
-'XD8J3TG7_lower',
-'Z27UU3OM_upper',
-]:
-            ann_file = Path('output/TVSR5QBQ_lower.json')
+def check_predictions(
+    # mesh_root: Path=Path('/home/mkaailab/Documents/IOS/Maud Wijbrandts/results_test'),
+    mesh_root: Path=Path('/home/mkaailab/Documents/IOS/Wiechmann'),
+    extensions: List[str]=['obj', 'ply', 'stl'],
+    filter: List[str]=[],
+    # ann_root: Path=Path('/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_C_FDI&Toothtype_root'),
+    # ann_root: Path=Path('/home/mkaailab/Documents/IOS/Katja Vos/reviewed_annotations'),
+    ann_root: Path=Path('/home/mkaailab/Documents/IOS/Wiechmann'),
+    verbose: bool=True,
+    save_to_storage: bool=False,
+):
+    mesh_files = sorted([f for ext in extensions for f in mesh_root.glob(f'**/*.{ext}')])
+    ann_files = sorted(ann_root.glob('**/*er.json'))
+    for ann_file in ann_files:
+        mesh_file = [f for f in mesh_files if f.stem == ann_file.stem][0]
+        if not mesh_file.exists():
             continue
 
+        if filter and mesh_file.stem not in filter:
+            continue
 
-        # draw_instances(mesh_file, ann_file)
-        # draw_proposal(mesh_file, ann_file)
-        # draw_point_cloud(mesh_file)
-
+        # load mesh
+        print(mesh_file)
         ms = pymeshlab.MeshSet()
         ms.load_new_mesh(str(mesh_file))
-        # ms.meshing_remove_duplicate_vertices()
-        if clean:
-            ms.meshing_repair_non_manifold_edges()
-            ms.meshing_close_holes(maxholesize=130)  # ~20mm boundary
         mesh = ms.current_mesh()
         mesh.compact()
-
         vertices = mesh.vertex_matrix()
         triangles = mesh.face_matrix()
 
+        # load annotation
         with open(ann_file, 'rb') as f:
             ann = json.load(f)
-
+        # labels = np.array([0 if not attrs else attrs[0] for attrs in ann['attributes']])
         labels = np.array(ann['labels'])
-        classes = np.full_like(labels, fill_value=-1)
         instances = np.array(ann['instances'])
+        unique, index = np.unique(instances, return_index=True)
 
-        labels[(71 <= labels) & (labels <= 75)] -= 63
-        labels[(31 <= labels) & (labels <= 37)] -= 30
-        labels[labels == 38] = 7
-        labels[(81 <= labels) & (labels <= 85)] -= 73
-        labels[(41 <= labels) & (labels <= 47)] -= 40
-        labels[labels == 48] = 7
-
-        _, inverse = np.unique(labels, return_inverse=True)
-
-        print(mesh_file)
-        centroids = []
-        for idx in np.unique(instances)[1:]:
+        # print sorted tooth labels
+        centroids = np.zeros((0, 3))
+        for idx in unique[1:]:
             centroid = vertices[instances == idx].mean(0)
-            centroids.append(centroid)
-        if centroids:
-            centroids = np.stack(centroids)
-            inst_labels = np.array(ann['labels'])[np.unique(instances, return_index=True)[1][1:]]
+            centroids = np.concatenate((centroids, [centroid]))
+        if centroids.shape[0]:
+            inst_labels = labels[index[1:]]
             print(inst_labels[np.argsort(centroids[:, 0])])
 
-        # instances = np.array(ann['instances'])*0 - 1
-
-        # if not np.any(np.unique(np.array(ann['labels'])) % 10 == 8):
-        #     continue
-
-        # labels = np.clip(labels % 10, a_min=0, a_max=7)
-        # classes = (instances == 2) - 1
-
+        # initialize Open3D mesh
         mesh = open3d.geometry.TriangleMesh(
             vertices=open3d.utility.Vector3dVector(vertices),
             triangles=open3d.utility.Vector3iVector(triangles),
         )
         mesh.compute_vertex_normals()
-        mesh.vertex_colors = open3d.utility.Vector3dVector(palette[instances] / 255)
 
-        open3d.visualization.draw_geometries([mesh], width=1600, height=900)
+        # add instance colors
+        fdis = np.where(labels > 0, (labels - 11) % 20, -1)
+        mesh.vertex_colors = open3d.utility.Vector3dVector(palette[fdis] / 255)
+        if verbose:
+            open3d.visualization.draw_geometries([mesh], width=1600, height=900)
+        if save_to_storage:
+            open3d.io.write_triangle_mesh(str(mesh_file.parent / f'teeth_{mesh_file.stem}.ply'), mesh)
+
+        if 'probs' not in ann:
+            continue
+
+        # add type colors
+        extra = np.array(ann['extra'])[:, 0]
+        types = np.where(instances >= 0, extra[instances], -1)
+        mesh.vertex_colors = open3d.utility.Vector3dVector(palette[types] / 255)
+        if verbose:
+            open3d.visualization.draw_geometries([mesh], width=1600, height=900)
+        if save_to_storage:
+            open3d.io.write_triangle_mesh(str(mesh_file.parent / f'types_{mesh_file.stem}.ply'), mesh)
+
+        # only show fractures on opbouw teeth
+        probs = np.array(ann['probs'])[:, 0]
+        probs[(types == -1) | (types > 0)] = 0
+
+        red = np.column_stack((np.ones_like(probs), np.zeros_like(probs), np.zeros_like(probs)))
+        gray = np.tile(np.full_like(probs, 100 / 255)[:, None], (1, 3))
+        colors = probs[:, None] * red + (1 - probs[:, None]) * gray
+        mesh.vertex_colors = open3d.utility.Vector3dVector(colors)
+        if verbose:
+            open3d.visualization.draw_geometries([mesh], width=1600, height=900)
+        if save_to_storage:
+            open3d.io.write_triangle_mesh(str(f'{mesh_file.parent.as_posix()}/fractures_{mesh_file.stem}.ply'), mesh)
+
+
 
 
 def check_landmarks():
-    seg_root = Path('/home/mkaailab/Documents/IOS/3dteethland/data/unseen')
     seg_root = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    # seg_root = Path('input')
-    # seg_root = Path('/home/mkaailab/Documents/IOS/Brazil/test')
-    # seg_root = Path('/home/mkaailab/Documents/CBCT/fusion/stls')
-    landmarks_root = Path('/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train')
     landmarks_root = Path('/home/mkaailab/Documents/IOS/3dteethland/code/preds/3dteethland')
-    # landmarks_root = seg_root
 
     for landmarks_file in sorted(landmarks_root.glob('**/*__kpt.json')):
         stem = landmarks_file.stem.split('__')[0]

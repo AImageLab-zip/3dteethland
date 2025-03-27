@@ -461,6 +461,7 @@ class PointTensor:
         weighted_cluster: bool=False,
         weighted_average: bool=False,
         return_index: bool=False,
+        ignore_noisy: bool=False,
     ):
         if not self:
             return self
@@ -484,8 +485,9 @@ class PointTensor:
             )
         else:
             cluster_idxs = self._cluster_cpu(max_neighbor_dist, min_points)
-            noisy = (cluster_idxs == -1)
-            cluster_idxs[noisy] = torch.arange(cluster_idxs.amax() + 1, cluster_idxs.amax() + 1 + noisy.sum()).to(cluster_idxs)
+            if not ignore_noisy:
+                noisy = (cluster_idxs == -1)
+                cluster_idxs[noisy] = torch.arange(cluster_idxs.amax() + 1, cluster_idxs.amax() + 1 + noisy.sum()).to(cluster_idxs)
 
         if return_index:
             return cluster_idxs.long()

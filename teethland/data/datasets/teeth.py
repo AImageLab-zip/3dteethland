@@ -64,6 +64,7 @@ class TeethSegDataset(MeshDataset):
             'points': mesh.vertex_matrix(),
             'triangles': mesh.face_matrix(),
             'normals': mesh.vertex_normal_matrix(),
+            'colors': mesh.vertex_color_matrix()[:, :3],
             'point_count': mesh.vertex_number(),
             'triangle_count': mesh.face_number(),
         }
@@ -76,10 +77,14 @@ class TeethSegDataset(MeshDataset):
             annotation = json.load(f)
 
         labels = np.array(annotation['labels'])
+        types = np.array(annotation.get('types', [0]*labels.shape[0]))
+        attributes = np.array(annotation.get('attributes', [0]*labels.shape[0]))
         instances = np.array(annotation['instances'])
         
         _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
         labels[(counts < 30)[instances]] = 0
+        types[(counts < 30)[instances]] = 0
+        attributes[(counts < 30)[instances]] = 0
         instances[(counts < 30)[instances]] = 0
         _, instances = np.unique(instances, return_inverse=True)
 
@@ -94,6 +99,8 @@ class TeethSegDataset(MeshDataset):
                 {'confidences': np.array(annotation['confidences'])}
             ),
             'labels': labels,
+            'types': types,
+            'attributes': attributes,
             'instances': instances,
         }
 

@@ -125,7 +125,6 @@ class IdentificationLoss(nn.Module):
         self,
         w_ce: float=1.0,
         w_focal: float=1.0,
-        w_diff: float=0.0,
         w_homo: float=1.0,
         alpha: float=0.25,
         gamma: float=2.0,
@@ -134,12 +133,10 @@ class IdentificationLoss(nn.Module):
 
         self.w_ce = w_ce
         self.w_focal = w_focal
-        self.w_diff = w_diff
         self.w_homo = w_homo
 
         self.alpha = alpha
         self.gamma = gamma
-        self.index = torch.tensor([8, 9, 10, 11, 12, 13, 14, 15, 7, 6, 5, 4, 3, 2, 1, 0])
 
     def forward(
         self,
@@ -155,17 +152,6 @@ class IdentificationLoss(nn.Module):
         pt = torch.exp(-ce_loss)
         focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
 
-        diff_loss = torch.zeros_like(ce_loss[:0])
-        index = self.index.to(classes.F)
-        for b in range(classes.batch_size):
-            b_labels = (classes.batch(b).F.softmax(dim=-1) * index).sum(-1)
-            b_targets = index[targets.batch(b).F]
-            diff_labels = torch.abs(b_labels[None] - b_labels[:, None])
-            diff_targets = torch.abs(b_targets[None] - b_targets[:, None])
-
-            diff = (diff_labels - diff_targets) ** 2
-            diff_loss = torch.cat((diff_loss, diff.flatten()))
-
         homo_loss = torch.zeros_like(ce_loss[:0])
         for b in range(prototypes.batch_size):
             homo = torch.mean(prototypes.batch(b).F - prototypes.batch(b).F.mean(0))
@@ -174,7 +160,6 @@ class IdentificationLoss(nn.Module):
         loss = (
             self.w_ce * ce_loss.mean()
             + self.w_focal * focal_loss.mean()
-            + self.w_diff * diff_loss.mean()
             + self.w_homo * homo_loss.mean()
         )
 

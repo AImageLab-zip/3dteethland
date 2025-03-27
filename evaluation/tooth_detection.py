@@ -1,17 +1,33 @@
 import json
+import multiprocessing as mp
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import ConfusionMatrixDisplay, f1_score, jaccard_score
 from tqdm import tqdm
 
 
 def process_scan(
-    pred_label_dict,
-    gt_label_dict,
-    score_thresh: float=0.8,
+    pred_filename,
+    score_thresh: float=0.0,
     iou_thresh: float=0.5,
 ):
+    with open(pred_filename, 'r') as f:
+        pred_label_dict = json.load(f)
+    instances = np.array(pred_label_dict['instances'])
+    if class_key == 'types':
+        extra = np.array(pred_label_dict['extra'])[:, 0]
+        types = np.where(instances >= 0, extra[instances], -1)            
+        pred_label_dict['labels'] = types.tolist()
+    
+
+    # load ground-truth segmentations
+    gt_filename = [f for f in gt_files if f.name == pred_filename.name][0]
+    with open(gt_filename, 'r') as f:
+        gt_label_dict = json.load(f)
+    gt_label_dict['labels'] = gt_label_dict[class_key]
+    
     pred_instances = np.array(pred_label_dict['instances'])
     if 'confidences' not in pred_label_dict:
         pred_label_dict['confidences'] = np.ones_like(pred_instances).tolist()
@@ -67,25 +83,13 @@ def process_scan(
     gt_labels = np.array(gt_labels)
     pred_labels = np.array(pred_labels)
 
-    return tps, fps, fns, tooth_dices, gt_labels, pred_labels, gt_points, pred_points
+    return tps, fps, fns, tooth_dices, gt_labels, pred_labels, gt_points, pred_points, pred_filename
 
 
 
 if __name__ == "__main__":
-    sample_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg')
-
-
-    gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
-    gt_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/complete_full')
-    # gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper/cases')
-    # gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test_addenda')
-    # gt_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper')
-    #pred_dir = Path('mixed_ios_standardized')
-    pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_complete')
-    pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_partialnoalign')
-    # pred_dir = Path('/home/mkaailab/Documents/IOS/partials/full_dataset/result_3dteethseg')
-    # pred_dir = Path('/mnt/diag/IOS/3dteethseg/full_dataset/test_addenda')
+    gt_dir = Path('/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_C_FDI&Toothtype_root')
+    pred_dir = Path('/home/mkaailab/Documents/IOS/Maud Wijbrandts/results_test')
     TLA, TSA, TIR = [], [], []
     verbose = False
 
@@ -95,61 +99,46 @@ if __name__ == "__main__":
         'gt_points': [], 'pred_points': [],
     }
 
-    gt_files = sorted(gt_dir.glob('**/*er.json'))
-    # gt_files = [f for f in gt_files if (sample_dir / f.name).exists()]
-    scan_ids = [f.stem for f in gt_files]
-    _, unique_idxs = np.unique(scan_ids, return_index=True)
-    gt_files = [gt_files[i] for i in unique_idxs]
-
     pred_files = sorted(pred_dir.glob('**/*.json'))
+    # pred_files = [f for f in pred_files if not f.name.startswith('C')]
+
     # pred_files = [f for f in pred_files if (sample_dir / f.name).exists()]
     scan_ids = [f.stem for f in pred_files]
     _, unique_idxs = np.unique(scan_ids, return_index=True)
     pred_files = [pred_files[i] for i in unique_idxs]
+
+    gt_files = sorted(gt_dir.glob('**/*er.json'))
+    gt_files = [f for f in gt_files if (pred_dir / '_'.join(f.stem.split('_')[:-1]) / f.name).exists()]
+    scan_ids = [f.stem for f in gt_files]
+    _, unique_idxs = np.unique(scan_ids, return_index=True)
+    gt_files = [gt_files[i] for i in unique_idxs]
 
     stems = set([f.stem for f in gt_files]) & set([f.stem for f in pred_files])
     gt_files = [f for f in gt_files if f.stem in stems]
     pred_files = [f for f in pred_files if f.stem in stems]
     
     # thresh = determine_optimal_threshold(pred_files, gt_files)
-    thresh = 0.0
+    class_key = 'types'
 
     failures = []
-    i = 0
-    for pred_filename in tqdm(pred_files):        
-        with open(pred_filename, 'r') as f:
-            pred_label_dict = json.load(f)
-        labels = np.array(pred_label_dict['labels'])
-        instances = np.array(pred_label_dict['instances'])
-        
-        _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)
-        labels[(counts < 30)[instances]] = 0
-        instances[(counts < 30)[instances]] = 0
-        _, instances = np.unique(instances, return_inverse=True)
-        
-        pred_label_dict['labels'] = labels.tolist()
-        pred_label_dict['instances'] = instances.tolist()
+    with mp.Pool(16) as p:
+        i = p.imap_unordered(process_scan, pred_files)
+        for out in tqdm(i, total=len(pred_files)):
+            tps, fps, fns, tooth_dices, gt_labels, pred_labels, gt_points, pred_points, pred_filename = out
 
-        # load ground-truth segmentations
-        gt_filename = [f for f in gt_files if f.name == pred_filename.name][0]
-        with open(gt_filename, 'r') as f:
-            gt_label_dict = json.load(f)
-
-        tps, fps, fns, tooth_dices, gt_labels, pred_labels, gt_points, pred_points = process_scan(pred_label_dict, gt_label_dict, thresh)
-        # if False:
-        if fps or fns or not np.all(gt_labels == pred_labels):
-            failures.append((pred_filename, fps, fns, np.sum(gt_labels != pred_labels)))
-            
-        i += 1
-        stats['tps'].append(tps)
-        stats['fps'].append(fps)
-        stats['fns'].append(fns)
-        stats['dices'].extend(tooth_dices)
-        stats['gt_labels'].extend(gt_labels)
-        stats['pred_labels'].extend(pred_labels)
-        stats['gt_points'].extend(gt_points)
-        stats['pred_points'].extend(pred_points)
-        stats['names'].append(pred_filename.name)
+            # if False:
+            if fps or fns or not np.all(gt_labels == pred_labels):
+                failures.append((pred_filename, fps, fns, np.sum(gt_labels != pred_labels), gt_labels, pred_labels))
+                
+            stats['tps'].append(tps)
+            stats['fps'].append(fps)
+            stats['fns'].append(fns)
+            stats['dices'].extend(tooth_dices)
+            stats['gt_labels'].extend(gt_labels)
+            stats['pred_labels'].extend(pred_labels)
+            stats['gt_points'].extend(gt_points)
+            stats['pred_points'].extend(pred_points)
+            stats['names'].append(pred_filename.name)
 
     print('Tooth Precision:', sum(stats['tps']) / (sum(stats['tps']) + sum(stats['fps'])))
     print('Tooth Sensitivity:', sum(stats['tps']) / (sum(stats['tps']) + sum(stats['fns'])))
@@ -164,18 +153,22 @@ if __name__ == "__main__":
     print('macro-IoU:', macro_iou)
 
     with open(pred_dir / f'{gt_dir.name}_failures.txt', 'w') as f:
-        f.write('file,false_positive,false_negative,wrong_labels\n')
-        for filename, fp, fn, count in failures:
-            f.write(','.join([filename.stem, str(fp), str(fn), str(count)]) + '\n')
+        f.write('file,false_positive,false_negative,wrong_labels,gt_labels,pred_labels\n')
+        for filename, fp, fn, count, gt_labels, pred_labels in failures:
+            f.write(','.join([filename.stem, str(fp), str(fn), str(count), str(gt_labels), str(pred_labels)]) + '\n')
+
+    cmd = ConfusionMatrixDisplay.from_predictions(gt_labels, pred_labels)
+    cmd.plot(include_values=False)
+    plt.show(block=True)
 
     upper_mask = np.isin(gt_labels // 10, np.array([1, 2, 5, 6]))
 
-    # cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[upper_mask], pred_labels[upper_mask])
-    # cmd.plot(include_values=False)
-    # plt.show(block=True)
+    cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[upper_mask], pred_labels[upper_mask])
+    cmd.plot(include_values=False)
+    plt.show(block=True)
     
-    # cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[~upper_mask], pred_labels[~upper_mask])
-    # cmd.plot(include_values=False)
-    # plt.show(block=True)
+    cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[~upper_mask], pred_labels[~upper_mask])
+    cmd.plot(include_values=False)
+    plt.show(block=True)
 
     k = 3

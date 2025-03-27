@@ -25,6 +25,7 @@ class BinSegNet(pl.LightningModule):
 
     def __init__(
         self,
+        num_classes: int,
         lr: float,
         weight_decay: float,
         epochs: int,
@@ -35,7 +36,7 @@ class BinSegNet(pl.LightningModule):
 
         model_args.pop('checkpoint_path', None)
         self.model = nn.StratifiedTransformer(
-            **model_args,
+            out_channels=[1 for _ in range(num_classes - 1)], **model_args,
         )
 
         self.seg_criterion = nn.BinarySegmentationLoss(
@@ -46,6 +47,7 @@ class BinSegNet(pl.LightningModule):
         self.dice_val = BinaryF1Score()
         self.iou = BinaryJaccardIndex()
 
+        self.num_classes = num_classes
         self.lr = lr
         self.weight_decay = weight_decay
         self.epochs = epochs
@@ -53,11 +55,11 @@ class BinSegNet(pl.LightningModule):
 
     def forward(
         self,
-        x: PointTensor,
+        x: Tuple[PointTensor, ...],
     ) -> PointTensor:
-        _, seg = self.model(x)
+        _, segs = self.model(x)
 
-        return seg
+        return segs
 
     def training_step(
         self,
@@ -66,11 +68,17 @@ class BinSegNet(pl.LightningModule):
     ) -> TensorType[torch.float32]:
         x, labels = batch
 
-        seg = self(x)
+        segs = self(x)
 
-        loss = self.seg_criterion(seg, labels)
+        loss = 0
+        for i, seg in enumerate(segs, 1):
+            labels_i = labels.new_tensor(features=(labels.F >= i).to(int) - 1)
+            loss = loss + self.seg_criterion(seg, labels_i)
         
-        self.dice_train((seg.F[:, 0] >= 0).long(), (labels.F >= 0).long())
+        self.dice_train(
+            (segs[-1].F[:, 0] >= 0).long(),
+            (labels.F == (self.num_classes - 1)).long(),
+        )            
 
         log_dict = {
             'loss/train': loss,
@@ -87,11 +95,17 @@ class BinSegNet(pl.LightningModule):
     ):
         x, labels = batch
 
-        seg = self(x)
+        segs = self(x)
 
-        loss = self.seg_criterion(seg, labels)
+        loss = 0
+        for i, seg in enumerate(segs, 1):
+            labels_i = labels.new_tensor(features=(labels.F >= i).to(int) - 1)
+            loss = loss + self.seg_criterion(seg, labels_i)
         
-        self.dice_val((seg.F[:, 0] >= 0).long(), (labels.F >= 0).long())
+        self.dice_val(
+            (segs[-1].F[:, 0] >= 0).long(),
+            (labels.F == (self.num_classes - 1)).long(),
+        )
 
         log_dict = {
             'loss/val': loss,

@@ -103,10 +103,11 @@ class TeethSegDataModule(pl.LightningDataModule):
         if isinstance(self.fold, str):
             with open(self.fold, 'r') as f:
                 val_mesh_files = [l.strip() for l in f.readlines() if l.strip()]
+            val_mesh_files = ['_'.join(name.split('_')[:2]) for name in val_mesh_files]
 
             mesh_files = [fs[0] if isinstance(fs, tuple) else fs for fs in files]
-            train_files = [fs for i, fs in enumerate(files) if mesh_files[i].name not in val_mesh_files]
-            val_files = [fs for i, fs in enumerate(files) if mesh_files[i].name in val_mesh_files]
+            train_files = [fs for i, fs in enumerate(files) if mesh_files[i].stem not in val_mesh_files]
+            val_files = [fs for i, fs in enumerate(files) if mesh_files[i].stem in val_mesh_files]
             if self.include_val_as_train:
                 train_files += val_files
 
@@ -121,7 +122,7 @@ class TeethSegDataModule(pl.LightningDataModule):
                 annotation = json.load(f)
 
             subject = '_'.join(re.split('_|-', case_files[0].stem)[:-1])
-            subject = case_files[0].stem.split(' ')[0]
+            subject = case_files[0].stem.split('_')[0]
             labels = np.array(annotation['labels'])
             _, instances, counts = np.unique(
                 annotation['instances'], return_inverse=True, return_counts=True,
@@ -150,7 +151,7 @@ class TeethSegDataModule(pl.LightningDataModule):
 
         # write folds to storage for documentation
         for i, (_, fold_idxs) in enumerate(splits):
-            with open(f'fractures_fold_{i}.txt', 'w') as f:
+            with open(f'caries_fold_{i}.txt', 'w') as f:
                 for subject_idx in fold_idxs:
                     for fs in subject_files[subject_idx]:
                         f.write(fs[0].name + '\n')

@@ -28,6 +28,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
         distinguish_upper_lower: bool,
         m3_as_m2: bool,
         random_partial: bool,
+        with_color: bool,
         **dm_cfg,
     ):
         super().__init__(**dm_cfg)
@@ -36,6 +37,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
             T.UniformDensityDownsample(uniform_density_voxel_size[0]),
             T.XYZAsFeatures(),
             T.NormalAsFeatures(),
+            (T.ColorAsFeatures() if with_color else dict),
             T.ToTensor(),
         )
         
@@ -45,6 +47,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
         self.m3_as_m2 = m3_as_m2
         self.rand_partial = random_partial
         self.is_lower = None
+        self.with_color = with_color
 
     def setup(self, stage: Optional[str]=None):
         rng = np.random.default_rng(self.seed)
@@ -61,7 +64,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
                     T.PoseNormalize(),
                     T.InstanceCentroids(),
                 ) if self.rand_partial else dict,
-                T.RandomAxisFlip(rng=rng),
+                T.RandomXAxisFlip(rng=rng),
                 T.RandomScale(rng=rng),
                 T.RandomZAxisRotate(rng=rng),
                 self.default_transforms,
@@ -97,7 +100,7 @@ class TeethInstSegDataModule(TeethSegDataModule):
 
     @property
     def num_channels(self) -> int:
-        return 6
+        return 6 + 3 * self.with_color
 
     @property
     def num_classes(self) -> int:

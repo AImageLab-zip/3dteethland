@@ -17,7 +17,7 @@ from teethland.datamodules import (
 from teethland.models import AlignNet, FullNet
 
 
-def predict(stage: str, mixed: bool, devices: int, config: str):
+def predict(stage: str, mixed: bool, panoptic: bool, attributes: bool, devices: int, config: str):
     with open(config, 'r') as f:
         config = yaml.safe_load(f)
 
@@ -39,7 +39,7 @@ def predict(stage: str, mixed: bool, devices: int, config: str):
             seed=config['seed'], **config['datamodule'],
         )
     
-    single_tooth = 'binseg' if stage == 'highres' else 'landmarks'
+    single_tooth = f'binseg{"_attributes" if attributes else ""}' if stage == 'highres' else 'landmarks'
     config['model']['single_tooth'] = config['model'][single_tooth]
     if stage == 'align':
         model = AlignNet.load_from_checkpoint(
@@ -51,6 +51,8 @@ def predict(stage: str, mixed: bool, devices: int, config: str):
         model = FullNet(
             in_channels=dm.num_channels,
             num_classes=dm.num_classes,
+            is_panoptic=panoptic,
+            with_attributes=attributes,
             **config['model'],
             out_dir=Path(config['out_dir']),
         )
@@ -78,8 +80,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('stage', choices=['align', 'instances', 'highres', 'landmarks'])
     parser.add_argument('--mixed', action='store_true')
+    parser.add_argument('--panoptic', action='store_true')
+    parser.add_argument('--attributes', action='store_true')
     parser.add_argument('--devices', required=False, default=1, type=int)
     parser.add_argument('--config', required=False, default='teethland/config/config.yaml', type=str)
     args = parser.parse_args()
 
-    predict(args.stage, args.mixed, args.devices, args.config)
+    predict(args.stage, args.mixed, args.panoptic, args.attributes, args.devices, args.config)

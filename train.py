@@ -8,15 +8,19 @@ import yaml
 from teethland.datamodules import (
     TeethAlignDataModule,
     TeethBinSegDataModule,
+    TeethBinSegWithAttributesDataModule,
     TeethInstSegDataModule,
     TeethLandDataModule,
     TeethMixedSegDataModule,
+    TeethPanopticSegDataModule,
 )
 from teethland.models import (
     AlignNet,
     BinSegNet,
+    BinSegAttributesNet,
     DentalNet,
     LandmarkNet,
+    PanopticNet,
 )
 
 
@@ -37,6 +41,10 @@ def main(stage: str, devices: int, checkpoint: str):
         dm = TeethBinSegDataModule(seed=config['seed'], **config['datamodule'])
     elif stage == 'landmarks':
         dm = TeethLandDataModule(seed=config['seed'], **config['datamodule'])
+    elif stage == 'panopseg':
+        dm = TeethPanopticSegDataModule(seed=config['seed'], **config['datamodule'])
+    elif stage == 'binseg_attributes':
+        dm = TeethBinSegWithAttributesDataModule(seed=config['seed'], **config['datamodule'])
 
     # dm.setup('fit')
     if stage == 'align':
@@ -44,9 +52,8 @@ def main(stage: str, devices: int, checkpoint: str):
             in_channels=dm.num_channels,
             **config['model'][stage],
         )
-    if stage in ['instseg', 'mixedseg']:
+    elif stage in ['instseg', 'mixedseg']:
         model = DentalNet(
-        # model = DentalNet.load_from_checkpoint(
             in_channels=dm.num_channels,
             num_classes=dm.num_classes,
             **config['model'][stage],
@@ -54,6 +61,7 @@ def main(stage: str, devices: int, checkpoint: str):
     elif stage == 'binseg':
         model = BinSegNet(
             in_channels=dm.num_channels,
+            num_classes=dm.num_classes,
             **config['model'][stage],
         )     
     elif stage == 'landmarks':
@@ -63,6 +71,20 @@ def main(stage: str, devices: int, checkpoint: str):
             dbscan_cfg=config['model']['dbscan_cfg'],
             **config['model'][stage],
         )
+    elif stage == 'panopseg':
+        stage = 'instseg'
+        model = PanopticNet(
+            in_channels=dm.num_channels,
+            num_classes=dm.num_classes,
+            **config['model'][stage],
+        )
+    elif stage == 'binseg_attributes':
+        model = BinSegAttributesNet(
+            in_channels=dm.num_channels,
+            num_classes=dm.num_classes,
+            **config['model'][stage],
+        )     
+
 
     logger = TensorBoardLogger(
         save_dir=config['work_dir'],
@@ -85,7 +107,7 @@ def main(stage: str, devices: int, checkpoint: str):
     )
     metric_checkpoint_callback = ModelCheckpoint(
         save_top_k=3,
-        monitor='dice/val' if stage in ['binseg', 'landmarks'] else 'fdi_f1/val_epoch',
+        monitor='dice/val' if stage in ['binseg', 'landmarks', 'binseg_attributes'] else 'fdi_f1/val_epoch',
         mode='min' if stage in ['binseg', 'landmarks'] else 'max',
         filename='weights-{epoch:02d}',
     )
@@ -113,7 +135,7 @@ def main(stage: str, devices: int, checkpoint: str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('stage', choices=['align', 'instseg', 'mixedseg', 'binseg', 'landmarks'])
+    parser.add_argument('stage', choices=['align', 'instseg', 'mixedseg', 'panopseg', 'binseg', 'binseg_attributes', 'landmarks'])
     parser.add_argument('--devices', required=False, default=1, type=int)
     parser.add_argument('--checkpoint', required=False, default=None)
     args = parser.parse_args()

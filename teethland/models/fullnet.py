@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 import pymeshlab
 import pytorch_lightning as pl
@@ -50,7 +50,7 @@ def instance_nms(
     point_idxs: TensorType['K', 'N', torch.int64],
     conf_thresh: float=0.5,
     iou_thresh: float=0.3,
-    score_thresh: float=0.8,
+    score_thresh: float=0.90,
 ):
     fg_point_idxs, scores = [], torch.empty(0).to(probs.F)
     for i in range(probs.batch_size):
@@ -91,10 +91,11 @@ class FullNet(pl.LightningModule):
         instseg: Dict[str, Any],
         single_tooth: Dict[str, Any],
         proposal_points: int,
+        is_panoptic: bool,
+        with_attributes: bool,
         dbscan_cfg: dict[str, Any],
         do_align: bool,
         tta: bool,
-        standardize: bool,
         stage2_iters: int,
         post_process_seg: bool,
         post_process_labels: bool,
@@ -104,44 +105,63 @@ class FullNet(pl.LightningModule):
         super().__init__()
 
         # align stage
-        ckpt = align.pop('checkpoint_path')
-        self.align_backbone = nn.StratifiedTransformer(
-            in_channels=kwargs['in_channels'],
-            out_channels=None,
-            **instseg,
-        )
-        self.load_ckpt(self.align_backbone, ckpt)
+        if do_align:
+            ckpt = align.pop('checkpoint_path')
+            self.align_backbone = nn.StratifiedTransformer(
+                in_channels=min(6, kwargs['in_channels']),
+                out_channels=None,
+                **instseg,
+            )
+            self.load_ckpt(self.align_backbone, ckpt)
 
-        self.align_head = nn.MLP(self.align_backbone.enc_channels, 256, 9)
-        self.load_ckpt(self.align_head, ckpt)
-        
+            self.align_head = nn.MLP(self.align_backbone.enc_channels, 256, 9)
+            self.load_ckpt(self.align_head, ckpt)
+            
         # instance segmentation stage
         ckpt = instseg.pop('checkpoint_path')
         self.instances_model = nn.StratifiedTransformer(
-            in_channels=kwargs['in_channels'],
-            out_channels=[6, 1, None],
+            in_channels=min(6, kwargs['in_channels']),
+            out_channels=[6, 1, None] + ([None] if is_panoptic else []),
             **instseg,
         )
         self.load_ckpt(self.instances_model, ckpt)
 
-        self.identify_model = nn.MaskedAveragePooling(
-            num_features=self.instances_model.out_channels[-1],
+        self.fdi_model = nn.MaskedAveragePooling(
+            num_features=self.instances_model.out_channels[-1 - is_panoptic],
             out_channels=kwargs['num_classes'],
         )
-        self.load_ckpt(self.identify_model, ckpt)
+        try:
+            self.load_ckpt('fdi_model', ckpt)
+        except:
+            self.load_ckpt(self.fdi_model, ckpt)
+        if is_panoptic:
+            self.type_model = nn.MaskedAveragePooling(
+                num_features=self.instances_model.out_channels[-1],
+                out_channels=4,
+            )
+            self.load_ckpt('type_model', ckpt)
         
         # landmark prediction stage
         ckpt = single_tooth.pop('checkpoint_path')
         self.single_tooth_model = nn.StratifiedTransformer(
-            in_channels=9,
+            in_channels=3 + kwargs['in_channels'],
+            out_channels=[1] + ([1] if is_panoptic or with_attributes else []) + ([None] if with_attributes else []),
             **single_tooth,
         )
         self.load_ckpt(self.single_tooth_model, ckpt)
 
+        if with_attributes:
+            self.attribute_model = nn.MaskedAveragePooling(
+                num_features=self.single_tooth_model.out_channels[-1],
+                out_channels=4,
+            )
+            self.load_ckpt(self.attribute_model, ckpt)
+
         self.gen_proposals = T.GenerateProposals(proposal_points, max_proposals=100)
         self.do_align = do_align
+        self.is_panoptic = is_panoptic
+        self.with_attributes = with_attributes
         self.tta = tta
-        self.standardize = standardize
         self.stage2_iters = stage2_iters
         self.post_process_seg = post_process_seg
         self.post_process_labels = post_process_labels
@@ -154,9 +174,18 @@ class FullNet(pl.LightningModule):
         }
 
     def load_ckpt(self, model, ckpt: str):
-        state_dict = model.state_dict()
-        if ckpt:
-            ckpt = torch.load(ckpt)['state_dict']
+        if not ckpt:
+            return
+        
+        ckpt = torch.load(ckpt)['state_dict']
+        
+        if isinstance(model, str):
+            state_dict = self.__getattr__(model).state_dict()
+            ckpt = {k.split('.', 1)[1]: v for k, v in ckpt.items() if model in k}
+            self.__getattr__(model).load_state_dict(ckpt)
+            self.__getattr__(model).requires_grad_(False)
+        else:
+            state_dict = model.state_dict()            
             ckpt = {k.split('.', 1)[1]: v for k, v in ckpt.items()}
             ckpt = {k: v for k, v in ckpt.items() if k in state_dict}
             model.load_state_dict(ckpt)
@@ -168,6 +197,7 @@ class FullNet(pl.LightningModule):
     ) -> Tuple[PointTensor, TensorType[4, 4, torch.float32]]:
         # downsample
         x_down = x[x.cache['instseg_downsample_idxs']]
+        x_down = x_down.new_tensor(features=x_down.F[:, :6])
         
         encoding = self.align_backbone(x_down)
         embeddings = scatter_mean(encoding.F, encoding.batch_indices, dim=0)
@@ -215,6 +245,7 @@ class FullNet(pl.LightningModule):
             features=torch.column_stack((
                 (coords_homo @ T.T)[:, :3],
                 x.F[:, 3:6] @ T[:3, :3].T,
+                x.F[:, 6:],
             )),
         )
         out.cache = x.cache
@@ -224,9 +255,14 @@ class FullNet(pl.LightningModule):
     def instances_stage(
         self,
         x: PointTensor,
-    ) -> Tuple[PointTensor, PointTensor, PointTensor, PointTensor, TensorType[4, 4, torch.float32]]:
+    ) -> Tuple[
+        PointTensor, 
+        Union[PointTensor, Tuple[PointTensor, PointTensor]],
+        PointTensor,
+    ]:
         # downsample
         x_down = x[x.cache['instseg_downsample_idxs']]
+        x_down = x_down.new_tensor(features=x_down.F[:, :6])
 
         # test-time augmentation by horizontally flipping
         if self.tta:
@@ -238,7 +274,10 @@ class FullNet(pl.LightningModule):
             x_down = teethland.stack((x_down, x_down_flip))
         
         # forward pass
-        _, (spatial_embeds, seeds, features) = self.instances_model(x_down)
+        if self.is_panoptic:
+            _, (spatial_embeds, seeds, features, features2) = self.instances_model(x_down)
+        else:
+            _, (spatial_embeds, seeds, features) = self.instances_model(x_down)
 
         # cluster
         offsets = spatial_embeds.new_tensor(features=spatial_embeds.F[:, :3])
@@ -248,76 +287,77 @@ class FullNet(pl.LightningModule):
         )
         clusters._coordinates[clusters.batch_counts[0]:, 0] *= -1
 
-        if not self.standardize:
-            _, classes = self.identify_model(features, clusters)
-            # classes = classes.new_tensor(features=classes.F.argmax(-1))
-            labels = self.trainer.datamodule.teeth_classes_to_labels(
-                classes, method='mincost' if self.post_process_labels else 'argmax',
-            )
-
-            if self.tta:
-                keep_idxs = tta_nms(clusters, labels)
-                clusters.F[~torch.any(clusters.F == keep_idxs[:, None], dim=0)] = -1
-                labels = labels[keep_idxs]
-
-                if self.only_dentalnet:
-                    clusters = clusters.batch(0).new_tensor(
-                        features=torch.maximum(clusters.batch(0).F, clusters.batch(1).F),
-                    )
-                    labels._batch_counts = labels.batch_counts.sum()[None]
-
-                clusters.F = torch.unique(clusters.F, return_inverse=True)[1] - 1
-
-            # interpolate clusters back to original scan
-            instances = clusters.interpolate(teethland.stack([x for _ in labels.batch_counts]))
-
-            return x, instances, features, labels, torch.eye(4).to(x.F)
-
-
-        # determine instance centroids
-        centroids = scatter_mean(
-            src=clusters.C[clusters.F >= 0],
-            index=clusters.F[clusters.F >= 0],
-            dim=0,
-        )
-        centroids = PointTensor(coordinates=centroids)
-        
-        # rotate intra-oral scan
-        affine = self.trainer.datamodule.determine_rot_matrix(centroids)
-        coords_rot = x.C @ affine[:3, :3].T
-        normals_rot = x.F[:, 3:] @ affine[:3, :3].T
-        x_rot = x.new_tensor(
-            coordinates=coords_rot,
-            features=torch.column_stack((coords_rot, normals_rot)),
-        )
-        x_rot.cache = x.cache
-        x_rot_down = x_rot[x.cache['instseg_downsample_idxs']]
-
-        # second pass
-        _, (spatial_embeds, seeds, features) = self.instances_model(x_rot_down)
-
-        # cluster
-        offsets = spatial_embeds.new_tensor(features=spatial_embeds.F[:, :3])
-        sigmas = spatial_embeds.new_tensor(features=spatial_embeds.F[:, 3:])
-        clusters = learned_region_cluster(
-            offsets, sigmas, seeds,
+        _, classes = self.fdi_model(features, clusters)
+        labels = self.trainer.datamodule.teeth_classes_to_labels(
+            classes, method='mincost' if self.post_process_labels else 'argmax',
         )
 
-        # determine FDI number on rotated scan
-        _, classes = self.identify_model(features, clusters)
-        # classes = classes.new_tensor(features=classes.F.argmax(-1))
-        labels = self.trainer.datamodule.teeth_classes_to_labels(classes)
+        if self.tta:
+            keep_idxs = tta_nms(clusters, labels)
+            clusters.F[~torch.any(clusters.F == keep_idxs[:, None], dim=0)] = -1
+            labels = labels[keep_idxs]
+
+            if self.only_dentalnet:
+                clusters = clusters.batch(0).new_tensor(
+                    features=torch.maximum(clusters.batch(0).F, clusters.batch(1).F),
+                )
+                labels._batch_counts = labels.batch_counts.sum()[None]
+
+            clusters.F = torch.unique(clusters.F, return_inverse=True)[1] - 1
+
+        if self.is_panoptic:
+            features = features, features2
 
         # interpolate clusters back to original scan
-        instances = clusters.interpolate(x_rot)
+        instances = clusters.interpolate(teethland.stack([x for _ in labels.batch_counts]))
 
-        return x_rot, instances, features, labels, affine
+        return instances, features, labels
+    
+    def landmarks_process(
+        self,
+        proposals,
+        point_offsets,
+        keep_idxs,
+        labels,
+        affine,
+    ):        
+        print('start landmarks')
+        # apply NMS selection
+        proposals = proposals.batch(keep_idxs)
+        points_offsets = preds[1:]
+        points_offsets = [offsets.batch(keep_idxs) for offsets in points_offsets]
+
+        # process point-level landmarks
+        landmarks_list = []
+        for i, offsets in enumerate(points_offsets):
+            kpt_mask = offsets.F[:, 0] < 0.15  # 2.5 mm
+            coords = proposals.C + offsets.F[:, 1:]
+            dists = torch.clip(offsets.F[:, 0], 0, 0.15)
+            weights = (0.15 - dists) / 0.15
+            landmarks = PointTensor(
+                coordinates=coords[kpt_mask],
+                features=weights[kpt_mask],
+                batch_counts=torch.bincount(
+                    input=proposals.batch_indices[kpt_mask],
+                    minlength=proposals.batch_size,
+                ),
+            )
+            landmarks = landmarks.cluster(**self.dbscan_cfg)
+            landmarks = landmarks.new_tensor(features=torch.column_stack((landmarks.F, 
+                torch.full((landmarks.C.shape[0],), i).to(coords.device),
+            )))
+            landmarks_list.append(landmarks)
+        landmarks = teethland.cat(landmarks_list)
+
+        landmarks = self.trainer.datamodule.process_landmarks(labels, affine, landmarks)
+
+        return landmarks
     
     def single_tooth_stage(
         self,
         x: PointTensor,
         instances: PointTensor,
-        features: PointTensor,
+        features: Union[PointTensor, Tuple[PointTensor, PointTensor]],
         labels: PointTensor,
         affine: TensorType[4, 4, torch.float32],
     ) -> Tuple[PointTensor, PointTensor, Optional[PointTensor]]:
@@ -333,17 +373,20 @@ class FullNet(pl.LightningModule):
                 'points': x_down.C.cpu().numpy(),
                 'instances': instances.F.cpu().numpy(),
                 'instance_centroids': labels.C.cpu().numpy(),
-                'normals': x_down.F[:, 3:].cpu().numpy(),
+                'normals': x_down.F[:, 3:6].cpu().numpy(),
+                'colors': x_down.F[:, 6:].cpu().numpy(),
             }
             data_dict = self.gen_proposals(**data_dict)
             points = torch.from_numpy(data_dict['points']).to(x.C)
             normals = torch.from_numpy(data_dict['normals']).to(x.C)
+            colors = torch.from_numpy(data_dict['colors']).to(x.C)
             centroids = torch.from_numpy(data_dict['instance_centroids']).to(x.C)
             proposals = PointTensor(
                 coordinates=points.reshape(-1, 3),
                 features=torch.column_stack((
                     points.reshape(-1, 3),
                     normals.reshape(-1, 3),
+                    colors.reshape(-1, 3),
                     (points - centroids[:, None]).reshape(-1, 3),
                 )),
                 batch_counts=torch.tensor([points.shape[1]]*points.shape[0]).to(x.C.device),
@@ -386,44 +429,77 @@ class FullNet(pl.LightningModule):
         instances.F[(counts < 16)[inverse]] = -1
         instances.F = torch.unique(instances.F, return_inverse=True)[1] - 1
         
+        if self.is_panoptic:
+            features, features2 = features
+
         clusters = instances[x.cache['instseg_downsample_idxs']]
-        _, classes = self.identify_model(features.batch(0), clusters)
-        labels = self.trainer.datamodule.teeth_classes_to_labels(
+        _, classes = self.fdi_model(features.batch(0), clusters)
+        fdis = self.trainer.datamodule.teeth_classes_to_labels(
             classes, method='mincost' if self.post_process_labels else 'argmax',
         )
 
         if not isinstance(preds, list):
-            return instances, labels, None
+            return instances, fdis, None
+
+        if self.is_panoptic:
+            _, classes = self.type_model(features2.batch(0), clusters)
+            labels = fdis.new_tensor(features=torch.column_stack(
+                (fdis.F, classes.F.argmax(-1)),
+            ))
         
-        print('start landmarks')
-        # apply NMS selection
-        proposals = proposals.batch(keep_idxs)
-        points_offsets = preds[1:]
-        points_offsets = [offsets.batch(keep_idxs) for offsets in points_offsets]
+        if len(preds) in [2, 3]:  # fracture or caries segmentation
+            seg_probs = preds[1].new_tensor(features=torch.sigmoid(preds[1].F[:, 0]))
+            seg_probs = seg_probs.batch(keep_idxs)
+            
+            max_probs = torch.zeros_like(instances.F).float()
+            for b in range(seg_probs.batch_size):
+                interp = seg_probs.batch(b).interpolate(x, dist_thresh=0.03).F
+                max_probs = torch.maximum(max_probs, interp)
 
-        # process point-level landmarks
-        landmarks_list = []
-        for i, offsets in enumerate(points_offsets):
-            kpt_mask = offsets.F[:, 0] < 0.15  # 2.5 mm
-            coords = proposals.C + offsets.F[:, 1:]
-            dists = torch.clip(offsets.F[:, 0], 0, 0.15)
-            weights = (0.15 - dists) / 0.15
-            landmarks = PointTensor(
-                coordinates=coords[kpt_mask],
-                features=weights[kpt_mask],
-                batch_counts=torch.bincount(
-                    input=proposals.batch_indices[kpt_mask],
-                    minlength=proposals.batch_size,
-                ),
-            )
-            landmarks = landmarks.cluster(**self.dbscan_cfg)
-            landmarks = landmarks.new_tensor(features=torch.column_stack((landmarks.F, 
-                torch.full((landmarks.C.shape[0],), i).to(coords.device),
-            )))
-            landmarks_list.append(landmarks)
-        landmarks = teethland.cat(landmarks_list)
+            instances = instances.new_tensor(features=torch.column_stack(
+                (instances.F, max_probs),
+            ))
 
-        landmarks = self.trainer.datamodule.process_landmarks(labels, affine, landmarks)
+        if len(preds) == 3:  # caries type classification
+            caries_classes = torch.full_like(max_probs, -1, dtype=torch.int64)
+            caries_clusters = torch.full_like(max_probs, -1, dtype=torch.int64)
+            for b in range(preds[2].batch_size):
+                caries = preds[1].batch(b)
+                fg_probs = torch.sigmoid(caries.F[:, 0])
+                fg = proposals.batch(b)[fg_probs >= 0.1]
+                if not fg:
+                    continue
+
+                cluster_idxs = torch.full_like(fg_probs, -1, dtype=torch.int64)
+                cluster_idxs[fg_probs >= 0.1] = fg.cluster(
+                    min_points=10, return_index=True, ignore_noisy=True,
+                )
+                if torch.all(cluster_idxs == -1):
+                    continue
+
+                clusters = proposals.batch(b).new_tensor(features=cluster_idxs)
+                _, inst_classes = self.attribute_model(preds[2].batch(b), clusters)
+                inst_classes = inst_classes.new_tensor(features=inst_classes.F.argmax(-1))
+                
+                point_classes = torch.where(cluster_idxs >= 0, inst_classes.F[cluster_idxs], -1)
+                point_classes = caries.new_tensor(features=point_classes)
+                caries_classes = torch.maximum(
+                    caries_classes, point_classes.interpolate(x, dist_thresh=0.03).F,
+                )
+                
+                cluster_idxs[cluster_idxs >= 0] += caries_clusters.max() + 1
+                cluster_idxs = caries.new_tensor(features=cluster_idxs)
+                caries_clusters = torch.maximum(
+                    caries_clusters, cluster_idxs.interpolate(x, dist_thresh=0.03).F,
+                )
+            
+            instances = instances.new_tensor(features=torch.column_stack(
+                (instances.F, caries_clusters, caries_classes),
+            ))
+            
+            return instances, fdis, None
+        
+        landmarks = self.landmarks_process(proposals, preds[1:], keep_idxs, labels, affine)
 
         return instances, labels, landmarks
 
@@ -433,17 +509,16 @@ class FullNet(pl.LightningModule):
     ) -> Tuple[TensorType['N', torch.float32], PointTensor, PointTensor, PointTensor]:
         # stage 1
         if self.do_align:
-            x, align_affine = self.align_stage(x)
+            x, affine = self.align_stage(x)
         else:
-            align_affine = torch.eye(4).to(x.C)
+            affine = torch.eye(4).to(x.C)
 
         # stage 2
-        x, instances, features, labels, standardize_affine = self.instances_stage(x)
+        instances, features, labels = self.instances_stage(x)
         if torch.all(instances.F == -1) or self.only_dentalnet:
             return torch.zeros_like(x.C), instances, labels, None
         
         # stage 3
-        affine = standardize_affine @ align_affine
         instances, labels, landmarks = self.single_tooth_stage(x, instances, features, labels, affine)
 
         return instances.batch(0), labels.batch(0), landmarks
@@ -458,14 +533,17 @@ class FullNet(pl.LightningModule):
         ],
         batch_idx: int,
     ):
-        instances, classes, landmarks = self(batch)
+        try:
+            instances, classes, landmarks = self(batch)
 
-        self.save_segmentation(instances, classes)
-        self.save_landmarks(landmarks)
+            self.save_segmentation(instances, classes)
+            self.save_landmarks(landmarks)
+        except Exception as e:
+            return
 
     def save_segmentation(
         self,
-        instances: PointTensor,
+        points: PointTensor,
         labels: PointTensor,
     ):
         # make output directory
@@ -477,26 +555,31 @@ class FullNet(pl.LightningModule):
         out_file.parent.mkdir(parents=True, exist_ok=True)
 
         # save transformed mesh
-        mesh = pymeshlab.Mesh(
-            vertex_matrix=instances.C.cpu().numpy(),
-            face_matrix=self.trainer.datamodule.triangles.cpu().numpy(),
-        )
         ms = pymeshlab.MeshSet()
-        ms.add_mesh(mesh)
+        ms.load_new_mesh(str(self.trainer.datamodule.root / path))
         ms.save_current_mesh(str(out_file.parent / path.name))
 
         # determine per-point labels and instances
-        if torch.any(instances.F >= 0):
-            labels = torch.where(instances.F >= 0, labels.F[instances.F], 0)
-        else:
-            labels = torch.zeros_like(instances.F)
-        instances = torch.unique(instances.F, return_inverse=True)[1] - 1
+        instances = points.F if points.F.ndim == 1 else points.F[:, 0].long()
+        out_dict = {
+            'instances': (torch.unique(instances, return_inverse=True)[1] - 1).cpu().tolist(),
+            'labels': torch.zeros_like(instances).cpu().tolist(),
+        }
+
+        if points.F.ndim == 2:
+            extra = points.F[:, 1:]
+            out_dict['probs'] = extra.cpu().tolist()
+
+        if torch.any(instances >= 0):
+            if labels.F.ndim == 1:
+                labels = torch.where(instances >= 0, labels.F[instances], 0)
+            else:
+                out_dict['extra'] = labels.F[:, 1:].cpu().tolist()
+                labels = torch.where(instances >= 0, labels.F[instances, 0], 0)
+            
+            out_dict['labels'] = labels.long().cpu().tolist()
 
         # save as JSON file
-        out_dict = {
-            'instances': instances.cpu().tolist(),
-            'labels': labels.cpu().tolist(),
-        }        
         with open(out_file, 'w') as f:
             json.dump(out_dict, f)
 
