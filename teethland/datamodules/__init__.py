@@ -1,6 +1,7 @@
 from teethland.datamodules.teethalign import TeethAlignDataModule
 from teethland.datamodules.teethbinseg import TeethBinSegDataModule
 from teethland.datamodules.teethbinsegattrs import TeethBinSegWithAttributesDataModule
+from teethland.datamodules.teethmultiseg import TeethMultiSegDataModule
 from teethland.datamodules.teethfull import (
     TeethInstFullDataModule,
     TeethMixedFullDataModule,

@@ -146,21 +146,24 @@ def draw_landmarks(
 
 def check_predictions(
     # mesh_root: Path=Path('/home/mkaailab/Documents/IOS/Maud Wijbrandts/results_test'),
-    mesh_root: Path=Path('/home/mkaailab/Documents/IOS/Wiechmann'),
+    # mesh_root: Path=Path('/home/mkaailab/Documents/IOS/Zainab Bousshimad/data/root_first50_review_fdis'),
+    mesh_root: Path=Path('/mnt/diag/CBCT/fusion/IOS arches'),
     extensions: List[str]=['obj', 'ply', 'stl'],
-    filter: List[str]=[],
+    filter: List[str]=['16_lower', '16_upper'],
     # ann_root: Path=Path('/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_C_FDI&Toothtype_root'),
     # ann_root: Path=Path('/home/mkaailab/Documents/IOS/Katja Vos/reviewed_annotations'),
-    ann_root: Path=Path('/home/mkaailab/Documents/IOS/Wiechmann'),
+    # ann_root: Path=Path('/home/mkaailab/Documents/IOS/Zainab Bousshimad/data/root_first50_review_fdis'),
+    ann_root: Path=Path('/mnt/diag/CBCT/fusion/IOS arches'),
     verbose: bool=True,
     save_to_storage: bool=False,
 ):
     mesh_files = sorted([f for ext in extensions for f in mesh_root.glob(f'**/*.{ext}')])
     ann_files = sorted(ann_root.glob('**/*er.json'))
     for ann_file in ann_files:
-        mesh_file = [f for f in mesh_files if f.stem == ann_file.stem][0]
-        if not mesh_file.exists():
+        ann_mesh_files = [f for f in mesh_files if f.stem == ann_file.stem]
+        if not ann_mesh_files:
             continue
+        mesh_file = ann_mesh_files[0]
 
         if filter and mesh_file.stem not in filter:
             continue
@@ -178,6 +181,8 @@ def check_predictions(
         with open(ann_file, 'rb') as f:
             ann = json.load(f)
         # labels = np.array([0 if not attrs else attrs[0] for attrs in ann['attributes']])
+        # labels = np.array([0 if not point['assigned_ids'] else point['assigned_ids'][0] for point in ann])
+        
         labels = np.array(ann['labels'])
         instances = np.array(ann['instances'])
         unique, index = np.unique(instances, return_index=True)
@@ -204,34 +209,72 @@ def check_predictions(
         if verbose:
             open3d.visualization.draw_geometries([mesh], width=1600, height=900)
         if save_to_storage:
-            open3d.io.write_triangle_mesh(str(mesh_file.parent / f'teeth_{mesh_file.stem}.ply'), mesh)
-
-        if 'probs' not in ann:
-            continue
+            open3d.io.write_triangle_mesh(str(mesh_file.parent / f'fdis_{mesh_file.stem}.ply'), mesh)
 
         # add type colors
-        extra = np.array(ann['extra'])[:, 0]
-        types = np.where(instances >= 0, extra[instances], -1)
-        mesh.vertex_colors = open3d.utility.Vector3dVector(palette[types] / 255)
-        if verbose:
-            open3d.visualization.draw_geometries([mesh], width=1600, height=900)
-        if save_to_storage:
-            open3d.io.write_triangle_mesh(str(mesh_file.parent / f'types_{mesh_file.stem}.ply'), mesh)
+        if 'extra' in ann:
+            extra = np.array(ann['extra'])[:, 0]
+            types = np.where(instances >= 0, extra[instances], -1)
+            mesh.vertex_colors = open3d.utility.Vector3dVector(palette[types] / 255)
+            if verbose:
+                open3d.visualization.draw_geometries([mesh], width=1600, height=900)
+            if save_to_storage:
+                open3d.io.write_triangle_mesh(str(mesh_file.parent / f'types_{mesh_file.stem}.ply'), mesh)
 
-        # only show fractures on opbouw teeth
-        probs = np.array(ann['probs'])[:, 0]
-        probs[(types == -1) | (types > 0)] = 0
+        # add fracture segmentation
+        if 'probs' in ann and len(ann['probs'][0]) == 1:
+            probs = np.array(ann['probs'])[:, 0]
+            if 'extra' in ann:  # only show fractures on opbouw teeth
+                probs[(types == -1) | (types > 0)] = 0
 
-        red = np.column_stack((np.ones_like(probs), np.zeros_like(probs), np.zeros_like(probs)))
-        gray = np.tile(np.full_like(probs, 100 / 255)[:, None], (1, 3))
-        colors = probs[:, None] * red + (1 - probs[:, None]) * gray
-        mesh.vertex_colors = open3d.utility.Vector3dVector(colors)
-        if verbose:
-            open3d.visualization.draw_geometries([mesh], width=1600, height=900)
-        if save_to_storage:
-            open3d.io.write_triangle_mesh(str(f'{mesh_file.parent.as_posix()}/fractures_{mesh_file.stem}.ply'), mesh)
+            red = np.column_stack((np.ones_like(probs), np.zeros_like(probs), np.zeros_like(probs)))
+            gray = np.tile(np.full_like(probs, 100 / 255)[:, None], (1, 3))
+            colors = probs[:, None] * red + (1 - probs[:, None]) * gray
+            mesh.vertex_colors = open3d.utility.Vector3dVector(colors)
+            if verbose:
+                open3d.visualization.draw_geometries([mesh], width=1600, height=900)
+            if save_to_storage:
+                open3d.io.write_triangle_mesh(str(f'{mesh_file.parent.as_posix()}/fractures_{mesh_file.stem}.ply'), mesh)
 
+        # combine tooth wear segmentations
+        probs_palette = np.array([
+            [122, 143, 182],
+            [69, 22, 0],
+            [166, 188, 153],
+            [157, 23, 42],
+            [88, 45, 131],
+            [219, 167, 164],
+            [27, 179, 103],
+            [171, 20, 168],
+            [78, 149, 165],
+        ])
+        if 'probs' in ann and len(ann['probs'][0]) > 1:
+            probs = np.array(ann['probs'])[:, 2:]
+            probs[probs < 0.5] = 0.0
+            color = (probs[:, :, None] * probs_palette).sum(1) / 255
+            gray = np.tile(np.full_like(probs[:, :1], 100 / 255), (1, 3))
 
+            colors = color + gray * (1 - probs.sum(1, keepdims=True))
+            mesh.vertex_colors = open3d.utility.Vector3dVector(colors)
+            if verbose:
+                open3d.visualization.draw_geometries([mesh], width=1600, height=900)
+            if save_to_storage:
+                open3d.io.write_triangle_mesh(str(f'{mesh_file.parent.as_posix()}/wear_{mesh_file.stem}.ply'), mesh)
+
+        if 'attributes' in ann:
+            attrs = np.array([max(attrs) if attrs else 0 for attrs in ann['attributes']])
+            onehots = np.zeros((attrs.size, 10))
+            onehots[np.arange(attrs.size), attrs] = 1
+
+            color = (onehots[:, 1:, None] * probs_palette).sum(1) / 255
+            gray = np.tile(np.full_like(onehots[:, :1], 100 / 255), (1, 3))
+
+            colors = color + gray * onehots[:, :1]
+            mesh.vertex_colors = open3d.utility.Vector3dVector(colors)
+            if verbose:
+                open3d.visualization.draw_geometries([mesh], width=1600, height=900)
+            if save_to_storage:
+                open3d.io.write_triangle_mesh(str(f'{mesh_file.parent.as_posix()}/attrs_{mesh_file.stem}.ply'), mesh)
 
 
 def check_landmarks():

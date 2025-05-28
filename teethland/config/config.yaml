@@ -1,5 +1,5 @@
 work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: katja_withattributes_200epochs_01identify
+version: test
 seed: 0
 
 model:
@@ -45,8 +45,8 @@ model:
     checkpoint_path: '/home/mkaailab/Documents/IOS/partials/checkpoints/china_instseg_partialnoalign_4.ckpt'
     # checkpoint_path: 'checkpoints/3dteethseg_instseg_all.ckpt'
     checkpoint_path: '/home/mkaailab/Documents/IOS/3dteethland/code/checkpoints/maud_lu_instseg.ckpt'
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/maud_lu_c_panoptic_1/checkpoints/weights-epoch=199.ckpt'
-    checkpoint_path: '/mnt/diag/IOS/partials/checkpoints/3dteethseg_instseg_all.ckpt'
+    checkpoint_path: '/mnt/diag/IOS/Maud Wijbrandts/checkpoints/maud_lu_c_panoptic_2/checkpoints/weights-epoch=199.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/zainab2_instseg/checkpoints/weights-epoch=199.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 200  # overfitting after 600
@@ -67,7 +67,7 @@ model:
     stratified_downsample_ratio: 0.26
     crpe_bins: 80
     transformer_lr_ratio: 0.1
-    checkpoint_path: 'checkpoints/mixedseg_fold4.ckpt'
+    checkpoint_path: '/mnt/diag/IOS/mixed_ios/checkpoints/mixedseg_fold0.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 200
@@ -112,11 +112,12 @@ model:
     crpe_bins: 80
     transformer_lr_ratio: 0.1
     checkpoint_path: '/home/mkaailab/Documents/IOS/partials/checkpoints/china_binseg_partialnoalign_4.ckpt'
-    # checkpoint_path: 'checkpoints/3dteethseg_binseg_all.ckpt'
+    checkpoint_path: '/mnt/diag/IOS/Maud Wijbrandts/checkpoints/maud_lu_c_fractures_0/checkpoints/weights-epoch=79.ckpt'
     checkpoint_path: '/mnt/diag/IOS/partials/checkpoints/3dteethseg_binseg_all.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/zainab2_foldall_dicefocal_pretrain/checkpoints/weights-epoch=199.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
-    epochs: 80
+    epochs: 200
     warmup_epochs: 5
 
   binseg_attributes:
@@ -134,7 +135,7 @@ model:
     stratified_downsample_ratio: 0.26
     crpe_bins: 80
     transformer_lr_ratio: 0.1
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/katja_withattributes_200epochs_01identify/checkpoints/weights-epoch=199.ckpt'
+    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/katja_fold3/checkpoints/weights-epoch=199.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 200
@@ -155,35 +156,32 @@ model:
 accumulate_grad_batches: 1  # 1 better segmentation, worse classification
 gradient_clip_norm: 35  # 10 is worse
 
-out_dir: '/home/mkaailab/Documents/IOS/Katja Vos/predictions'
+out_dir: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/data/clean'
 datamodule:
-  root: '/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_C_FDI&Toothtype_root'
-  root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/root'
-  root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/root_another30'
-  root: '/home/mkaailab/Documents/IOS/Katja Vos/data/caries_singletooth2'
-  root: '/home/mkaailab/Documents/IOS/Katja Vos/data/root_AKMA'
-  # root: '/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_C_fractures_singletooth'
+  root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/data/root_first50_review_fdis'
+  root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/data/clean scans'
+  # root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/data/single_teeth'
   landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
   regex_filter: ''
   extensions: ['ply', 'stl', 'obj']
   # fold: 0
-  fold: 'caries_fold_0.txt'
+  fold: 'zainab2_fold_4.txt'
   norm: true
   clean: true  # TODO: Set to true for Grand Challenge inference
   val_size: 0.2
   include_val_as_train: False
-  sampler: 'binary'  # 'default', 'balanced', or 'binary'
+  sampler: 'balanced'  # 'default', 'balanced', or 'binary'
   batch: null  # [0, 100]
   batch_size: 16
-  num_workers: 0
+  num_workers: 1
   pin_memory: True
-  persistent_workers: False
+  persistent_workers: True
   uniform_density_voxel_size: [0.025, 0.01]  # instseg, single-tooth
   proposal_points: 12000
   max_proposals: 8
   m3_as_m2: False
   distinguish_left_right: true
   random_partial: False
-  distinguish_upper_lower: false  # True worse
-  label_as_instance: True
-  with_color: True
+  distinguish_upper_lower: False  # True worse
+  label_as_instance: False
+  with_color: False

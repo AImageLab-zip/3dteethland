@@ -78,7 +78,8 @@ class TeethSegDataset(MeshDataset):
 
         labels = np.array(annotation['labels'])
         types = np.array(annotation.get('types', [0]*labels.shape[0]))
-        attributes = np.array(annotation.get('attributes', [0]*labels.shape[0]))
+        attributes = annotation.get('attributes', [[]]*labels.shape[0])
+        attributes = np.array([max(attrs) if attrs else 0 for attrs in attributes])
         instances = np.array(annotation['instances'])
         
         _, instances, counts = np.unique(instances, return_inverse=True, return_counts=True)

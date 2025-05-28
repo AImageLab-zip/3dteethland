@@ -1,6 +1,7 @@
 import json
 import multiprocessing as mp
 from pathlib import Path
+import re
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -88,10 +89,8 @@ def process_scan(
 
 
 if __name__ == "__main__":
-    gt_dir = Path('/home/mkaailab/Documents/IOS/Maud Wijbrandts/LU_C_FDI&Toothtype_root')
-    pred_dir = Path('/home/mkaailab/Documents/IOS/Maud Wijbrandts/results_test')
-    TLA, TSA, TIR = [], [], []
-    verbose = False
+    gt_dir = Path('/home/mkaailab/Documents/IOS/Brazil/cases')
+    pred_dir = Path('/mnt/diag/IOS/mixed_ios/predictions/mixed_ios')
 
     stats = {
         'names': [], 'fps': [], 'fns': [], 'tps': [], 'dices': [],
@@ -99,8 +98,10 @@ if __name__ == "__main__":
         'gt_points': [], 'pred_points': [],
     }
 
-    pred_files = sorted(pred_dir.glob('**/*.json'))
-    # pred_files = [f for f in pred_files if not f.name.startswith('C')]
+    pred_files = sorted(pred_dir.glob('**/*er.json'))
+    # pred_files = [f for f in pred_files if len(re.split('\-|_', f.stem)[0]) == 4]
+    # pred_files = [f for f in pred_files if len(re.split('\-|_', f.stem)[0]) == 5]
+    # pred_files = [f for f in pred_files if len(re.split('\-|_', f.stem)[0]) > 5]
 
     # pred_files = [f for f in pred_files if (sample_dir / f.name).exists()]
     scan_ids = [f.stem for f in pred_files]
@@ -108,7 +109,6 @@ if __name__ == "__main__":
     pred_files = [pred_files[i] for i in unique_idxs]
 
     gt_files = sorted(gt_dir.glob('**/*er.json'))
-    gt_files = [f for f in gt_files if (pred_dir / '_'.join(f.stem.split('_')[:-1]) / f.name).exists()]
     scan_ids = [f.stem for f in gt_files]
     _, unique_idxs = np.unique(scan_ids, return_index=True)
     gt_files = [gt_files[i] for i in unique_idxs]
@@ -118,7 +118,7 @@ if __name__ == "__main__":
     pred_files = [f for f in pred_files if f.stem in stems]
     
     # thresh = determine_optimal_threshold(pred_files, gt_files)
-    class_key = 'types'
+    class_key = 'labels'
 
     failures = []
     with mp.Pool(16) as p:
@@ -149,26 +149,30 @@ if __name__ == "__main__":
     pred_labels = np.array(stats['pred_labels'])
     print('Tooth macro-F1:', f1_score(gt_labels, pred_labels, average='macro'))
 
-    macro_iou = jaccard_score(stats['gt_points'], stats['pred_points'], labels=np.unique(stats['gt_points'])[1:], average='macro')
-    print('macro-IoU:', macro_iou)
+    # macro_iou = jaccard_score(stats['gt_points'], stats['pred_points'], labels=np.unique(stats['gt_points'])[1:], average='macro')
+    # print('macro-IoU:', macro_iou)
 
-    with open(pred_dir / f'{gt_dir.name}_failures.txt', 'w') as f:
-        f.write('file,false_positive,false_negative,wrong_labels,gt_labels,pred_labels\n')
-        for filename, fp, fn, count, gt_labels, pred_labels in failures:
-            f.write(','.join([filename.stem, str(fp), str(fn), str(count), str(gt_labels), str(pred_labels)]) + '\n')
-
-    cmd = ConfusionMatrixDisplay.from_predictions(gt_labels, pred_labels)
-    cmd.plot(include_values=False)
-    plt.show(block=True)
+    # with open(pred_dir / f'{gt_dir.name}_failures.txt', 'w') as f:
+    #     f.write('file,false_positive,false_negative,wrong_labels,gt_labels,pred_labels\n')
+    #     for filename, fp, fn, count, gt_labels, pred_labels in failures:
+    #         f.write(','.join([filename.stem, str(fp), str(fn), str(count), str(gt_labels), str(pred_labels)]) + '\n')
 
     upper_mask = np.isin(gt_labels // 10, np.array([1, 2, 5, 6]))
 
-    cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[upper_mask], pred_labels[upper_mask])
-    cmd.plot(include_values=False)
-    plt.show(block=True)
-    
-    cmd = ConfusionMatrixDisplay.from_predictions(gt_labels[~upper_mask], pred_labels[~upper_mask])
-    cmd.plot(include_values=False)
-    plt.show(block=True)
+    fig, ax = plt.subplots(1, 1, figsize=(12, 7.2))
+    cmd = ConfusionMatrixDisplay.from_predictions(
+        gt_labels[upper_mask], pred_labels[upper_mask], ax=ax, text_kw={'fontsize': 8}, colorbar=False,
+    )
+    fig.canvas.draw()
+    plt.savefig('cm_upper.png', dpi=600, bbox_inches='tight', pad_inches=None)
+    plt.close()
+    # plt.show(block=True)
 
-    k = 3
+    fig, ax = plt.subplots(1, 1, figsize=(12, 7.2))
+    cmd = ConfusionMatrixDisplay.from_predictions(
+        gt_labels[~upper_mask], pred_labels[~upper_mask], ax=ax, text_kw={'fontsize': 8}, colorbar=False,
+    )
+    fig.canvas.draw()
+    plt.savefig('cm_lower.png', dpi=600, bbox_inches='tight', pad_inches=None)
+    plt.close()
+    # plt.show(block=True)

@@ -50,7 +50,7 @@ def instance_nms(
     point_idxs: TensorType['K', 'N', torch.int64],
     conf_thresh: float=0.5,
     iou_thresh: float=0.3,
-    score_thresh: float=0.90,
+    score_thresh: float=0.5,
 ):
     fg_point_idxs, scores = [], torch.empty(0).to(probs.F)
     for i in range(probs.batch_size):
@@ -145,7 +145,8 @@ class FullNet(pl.LightningModule):
         ckpt = single_tooth.pop('checkpoint_path')
         self.single_tooth_model = nn.StratifiedTransformer(
             in_channels=3 + kwargs['in_channels'],
-            out_channels=[1] + ([1] if is_panoptic or with_attributes else []) + ([None] if with_attributes else []),
+            # out_channels=[1] + ([1] if is_panoptic or with_attributes else []) + ([None] if with_attributes else []),
+            out_channels=11,
             **single_tooth,
         )
         self.load_ckpt(self.single_tooth_model, ckpt)
@@ -386,7 +387,7 @@ class FullNet(pl.LightningModule):
                 features=torch.column_stack((
                     points.reshape(-1, 3),
                     normals.reshape(-1, 3),
-                    colors.reshape(-1, 3),
+                    colors.reshape(-1, 3) if colors.numel() else points.reshape(-1, 3)[:, :0],
                     (points - centroids[:, None]).reshape(-1, 3),
                 )),
                 batch_counts=torch.tensor([points.shape[1]]*points.shape[0]).to(x.C.device),
@@ -395,7 +396,11 @@ class FullNet(pl.LightningModule):
             # run the proposals through the models
             _, preds = self.single_tooth_model(proposals)
             seg = preds[0] if isinstance(preds, list) else preds
-            probs = seg.new_tensor(features=torch.sigmoid(seg.F[:, 0]))
+
+            if seg.F.shape[1] == 1:
+                probs = seg.new_tensor(features=torch.sigmoid(seg.F[:, 0]))
+            else:
+                probs = seg.new_tensor(features=1 - torch.softmax(seg.F, dim=-1)[:, 0])
 
             # apply non-maximum suppression to remove redundant instances
             point_idxs = torch.from_numpy(data_dict['point_idxs']).to(seg.F.device)
@@ -438,6 +443,19 @@ class FullNet(pl.LightningModule):
             classes, method='mincost' if self.post_process_labels else 'argmax',
         )
 
+        if seg.F.shape[1] > 1:  # multi-class semantic segmentation
+            seg = seg.batch(keep_idxs)
+
+            max_probs = torch.zeros((instances.F.shape[0], seg.F.shape[1])).to(x.C)
+            for b in range(seg.batch_size):
+                probs = torch.softmax(seg.batch(b).F, axis=1)
+                interp = seg.batch(b).new_tensor(features=probs).interpolate(x, dist_thresh=0.03).F
+                max_probs = torch.maximum(max_probs, interp)
+
+            instances = instances.new_tensor(features=torch.column_stack(
+                (instances.F, max_probs),
+            ))
+
         if not isinstance(preds, list):
             return instances, fdis, None
 
@@ -459,6 +477,11 @@ class FullNet(pl.LightningModule):
             instances = instances.new_tensor(features=torch.column_stack(
                 (instances.F, max_probs),
             ))
+
+        if len(preds) > 3:  # landmark detection        
+            landmarks = self.landmarks_process(proposals, preds[1:], keep_idxs, labels, affine)
+
+            return instances, labels, landmarks
 
         if len(preds) == 3:  # caries type classification
             caries_classes = torch.full_like(max_probs, -1, dtype=torch.int64)
@@ -497,11 +520,7 @@ class FullNet(pl.LightningModule):
                 (instances.F, caries_clusters, caries_classes),
             ))
             
-            return instances, fdis, None
-        
-        landmarks = self.landmarks_process(proposals, preds[1:], keep_idxs, labels, affine)
-
-        return instances, labels, landmarks
+        return instances, fdis, None
 
     def forward(
         self,

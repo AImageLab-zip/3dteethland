@@ -10,7 +10,11 @@ from teethland.nn.modules.dropout import DropPath
 from teethland.nn.modules.feedforward import MLP
 from teethland.nn.modules.kpconv import KPConv, KPConvResidualBlock
 from teethland.nn.modules.linear import Linear
-from teethland.nn.modules.loss import BCELoss, BinarySegmentationLoss
+from teethland.nn.modules.loss import (
+    BCELoss,
+    BinarySegmentationLoss,
+    MultiSegmentationLoss,
+)
 from teethland.nn.modules.normalization import BatchNorm, LayerNorm
 from teethland.nn.modules.pooling import GroupedMaxPool, MaskedAveragePooling
 from teethland.nn.modules.stratified_transformer import StratifiedTransformer
