@@ -1,10 +1,9 @@
 from setuptools import setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-
 setup(
     name='pointops',
-    version='0.0.0',
+    version='0.0.1',
     ext_modules=[CUDAExtension(
         name='pointops',
         sources=[
@@ -23,6 +22,19 @@ setup(
             'src/neighbors/knn_query/knn_query_cuda.cu',
         ],
         runtime_library_dirs=['/usr/local/lib'],
+        extra_compile_args={
+            'cxx': ['-O3'],
+            'nvcc': [
+                '-gencode=arch=compute_60,code=sm_60',
+                '-gencode=arch=compute_70,code=sm_70',
+                '-gencode=arch=compute_75,code=sm_75',
+                '-gencode=arch=compute_80,code=sm_80',
+                '-gencode=arch=compute_86,code=sm_86',
+                '-gencode=arch=compute_90,code=sm_90',
+                '--use_fast_math',
+                '-O3'
+            ]
+        },
     )],
     cmdclass={
         'build_ext': BuildExtension,
