@@ -1,4 +1,4 @@
-work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
+work_dir: '/work/grana_maxillo/BiteClassify/'
 version: mixedseg_validate
 seed: 0
 
@@ -18,7 +18,7 @@ model:
     stratified_downsample_ratio: 0.26
     crpe_bins: 80
     transformer_lr_ratio: 0.1
-    checkpoint_path: 'checkpoints/instseg_full.ckpt'
+    checkpoint_path: '/work/grana_maxillo/BiteClassify/instseg_full.ckpt'
     # checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/mixedseg_checked/checkpoints/weights-epoch=132-v1.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
@@ -40,7 +40,7 @@ model:
     stratified_downsample_ratio: 0.26
     crpe_bins: 80
     transformer_lr_ratio: 0.1
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/mixedseg/checkpoints/weights-epoch=199.ckpt'
+    checkpoint_path: '/work/grana_maxillo/BiteClassify/landmarks_full.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 200
@@ -62,7 +62,7 @@ model:
     crpe_bins: 80
     transformer_lr_ratio: 0.1
     # checkpoint_path: 'checkpoints/landmarks.ckpt'
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/landmarks_full/checkpoints/weights-epoch=499.ckpt'
+    checkpoint_path: '/work/grana_maxillo/BiteClassify/landmarks_full.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 500
@@ -79,10 +79,9 @@ gradient_clip_norm: 35  # 10 is worse
 
 out_dir: ''
 datamodule:
-  root: '/mnt/diag/IOS/3dteethseg/full_dataset/lower_upper'
-  root: '/home/mkaailab/Documents/IOS/3dteethland/code/input'
-  root: '/home/mkaailab/Documents/IOS/Brazil/cases'
-  landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
+  root: '/work/grana_maxillo/BiteClassify/reduced_std_dataset'
+  landmarks_root: '/work/grana_maxillo/BiteClassify/landmarks_full.ckpt'
+  checkpoint_path: '/work/grana_maxillo/BiteClassify/instseg_full.ckpt'
   regex_filter: ''
   extensions: ['ply', 'stl', 'obj']
   clean: True  # TODO: Set to true for Grand Challenge inference
