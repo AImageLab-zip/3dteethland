@@ -1,5 +1,5 @@
-work_dir: '/home/mkaailab/Documents/logs/tooth_segmentation'
-version: test
+work_dir: '/work/grana_maxillo/BiteClassify/'
+version: mixedseg_validate
 seed: 0
 
 model:
@@ -42,11 +42,8 @@ model:
     stratified_downsample_ratio: 0.26
     crpe_bins: 80
     transformer_lr_ratio: 0.1
-    checkpoint_path: '/home/mkaailab/Documents/IOS/partials/checkpoints/china_instseg_partialnoalign_4.ckpt'
-    # checkpoint_path: 'checkpoints/3dteethseg_instseg_all.ckpt'
-    checkpoint_path: '/home/mkaailab/Documents/IOS/3dteethland/code/checkpoints/maud_lu_instseg.ckpt'
-    checkpoint_path: '/mnt/diag/IOS/Maud Wijbrandts/checkpoints/maud_lu_c_panoptic_2/checkpoints/weights-epoch=199.ckpt'
-    checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/zainab2_instseg/checkpoints/weights-epoch=199.ckpt'
+    checkpoint_path: '/work/grana_maxillo/BiteClassify/instseg_full.ckpt'
+    # checkpoint_path: '/home/mkaailab/Documents/logs/tooth_segmentation/mixedseg_checked/checkpoints/weights-epoch=132-v1.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 200  # overfitting after 600
@@ -67,7 +64,7 @@ model:
     stratified_downsample_ratio: 0.26
     crpe_bins: 80
     transformer_lr_ratio: 0.1
-    checkpoint_path: '/mnt/diag/IOS/mixed_ios/checkpoints/mixedseg_fold0.ckpt'
+    checkpoint_path: '/work/grana_maxillo/BiteClassify/landmarks_full.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 200
@@ -89,8 +86,8 @@ model:
     stratified_downsample_ratio: 0.26
     crpe_bins: 80
     transformer_lr_ratio: 0.1
-    checkpoint_path: 'checkpoints/landmarks_full.ckpt'
-    checkpoint_path: 'checkpoints/landmarks_ablation.ckpt'
+    # checkpoint_path: 'checkpoints/landmarks.ckpt'
+    checkpoint_path: '/work/grana_maxillo/BiteClassify/landmarks_full.ckpt'
     lr: 0.0006
     weight_decay: 0.0001
     epochs: 500
@@ -158,10 +155,9 @@ gradient_clip_norm: 35  # 10 is worse
 
 out_dir: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/data/clean'
 datamodule:
-  root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/data/root_first50_review_fdis'
-  root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/data/clean scans'
-  # root: '/home/mkaailab/Documents/IOS/Zainab Bousshimad/data/single_teeth'
-  landmarks_root: '/home/mkaailab/Documents/IOS/3dteethland/data/3DTeethLand_landmarks_train'
+  root: '/work/grana_maxillo/BiteClassify/reduced_std_dataset'
+  landmarks_root: '/work/grana_maxillo/BiteClassify/landmarks_full.ckpt'
+  checkpoint_path: '/work/grana_maxillo/BiteClassify/instseg_full.ckpt'
   regex_filter: ''
   extensions: ['ply', 'stl', 'obj']
   # fold: 0

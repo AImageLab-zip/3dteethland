@@ -5,7 +5,7 @@
 #include <cstdio>
 
 
-#define MAX_THREADS 1024
+#define MAX_THREADS 512
 #define THREADS_PER_BLOCK 256
 #define DIVUP(m, n) ((m) / (n) + ((m) % (n) > 0))
 
